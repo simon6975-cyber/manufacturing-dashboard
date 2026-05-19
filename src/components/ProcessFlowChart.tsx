@@ -2,8 +2,8 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Process } from '@/lib/types';
-import useAppStore from '@/store/useAppStore';
+import { Process } from ../../lib/types';
+import useAppStore from ../../store/useAppStore';
 import {
   AlertCircle,
   CheckCircle,
@@ -22,14 +22,14 @@ const ProcessFlowChart: React.FC<ProcessFlowChartProps> = ({
   processes,
   stopageData = {},
   efficiencyData = {},
-}) => {
-  const selectedProcessNo = useAppStore((state) => state.selectedProcessNo);
-  const setSelectedProcess = useAppStore((state) => state.setSelectedProcess);
+}:any) => {
+  const selectedProcessNo = useAppStore((state:any) => state.selectedProcessNo);
+  const setSelectedProcess = useAppStore((state:any) => state.setSelectedProcess);
 
   // 공정을 구룹별로 정렬
   const groupedProcesses = useMemo(() => {
     const groups: Record<string, Process[]> = {};
-    processes.forEach((p) => {
+    processes.forEach((p:any) => {
       if (!groups[p.gubun]) {
         groups[p.gubun] = [];
       }

@@ -3,7 +3,7 @@
 
 import React, { useMemo } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { Process, DailyStatistics } from '@/lib/types';
+import { Process, DailyStatistics } from ../../lib/types';
 import { TrendingUp, TrendingDown, AlertTriangle, Gauge } from 'lucide-react';
 
 interface StatisticsDashboardProps {

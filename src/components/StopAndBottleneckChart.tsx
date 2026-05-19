@@ -17,7 +17,7 @@ import {
   LineChart,
   Line,
 } from 'recharts';
-import { StopCode, BottleneckCode, DailyStatistics } from '@/lib/types';
+import { StopCode, BottleneckCode, DailyStatistics } from ../../lib/types';
 
 interface StopAndBottleneckChartProps {
   stopCodes: StopCode[];

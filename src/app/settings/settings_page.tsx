@@ -2,8 +2,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import Navigation from '@/components/Navigation';
-import { addProcess, addStopCode, addBottleneckCode } from '@/lib/firestore';
+import Navigation from '../../components/Navigation';
+import { addProcess, addStopCode, addBottleneckCode } from '../../lib/firestore';
 import { Settings, Database, AlertCircle, CheckCircle } from 'lucide-react';
 
 // 초기 공정 데이터 (스크린샷 기반)

@@ -30,7 +30,7 @@ const Navigation: React.FC = () => {
 
           {/* 데스크톱 네비게이션 */}
           <div className="hidden md:flex items-center gap-1">
-            {navItems.map((item) => {
+            {navItems.map((item:any) => {
               const Icon = item.icon;
               const isActive = pathname === item.href;
               return (
@@ -62,7 +62,7 @@ const Navigation: React.FC = () => {
         {/* 모바일 네비게이션 */}
         {isOpen && (
           <div className="md:hidden pb-4 space-y-2">
-            {navItems.map((item) => {
+            {navItems.map((item:any) => {
               const Icon = item.icon;
               const isActive = pathname === item.href;
               return (

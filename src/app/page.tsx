@@ -1,87 +1,19 @@
 // src/app/page.tsx
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import Navigation from '../components/Navigation';
+import React from 'react';
+import Sidebar from '../components/Sidebar';
 import ProcessFlowDiagram from '../components/ProcessFlowDiagram';
-import StopAndBottleneckChart from '../components/StopAndBottleneckChart';
-import StatisticsDashboard from '../components/StatisticsDashboard';
-import { Process, StopCode, BottleneckCode, StopageRecord } from '../lib/types';
-import { 
-  getProcesses, 
-  getStopCodes, 
-  getBottleneckCodes, 
-  getStopageRecords 
-} from '../lib/firestore';
-import { Factory, Activity, AlertTriangle, TrendingUp } from 'lucide-react';
 
 export default function Home() {
-  const [processes, setProcesses] = useState<Process[]>([]);
-  const [stopCodes, setStopCodes] = useState<StopCode[]>([]);
-  const [bottleneckCodes, setBottleneckCodes] = useState<BottleneckCode[]>([]);
-  const [stopageRecords, setStopageRecords] = useState<StopageRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      setIsLoading(true);
-      const [proc, stops, bottlenecks, records] = await Promise.all([
-        getProcesses(),
-        getStopCodes(),
-        getBottleneckCodes(),
-        getStopageRecords()
-      ]);
-      setProcesses(proc);
-      setStopCodes(stops);
-      setBottleneckCodes(bottlenecks);
-      setStopageRecords(records);
-    } catch (error) {
-      console.error('데이터 로드 실패:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-black text-white">
-      <Navigation />
-      <main className="max-w-[1600px] mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white flex items-center gap-2">
-            <Factory className="w-8 h-8 text-blue-400" />
-            제작공정 대시보드
-          </h1>
-          <p className="text-gray-400 mt-2">실시간 공정 모니터링 및 분석</p>
-        </div>
+    <div className="flex h-screen bg-black text-white overflow-hidden">
+      {/* 좌측 사이드바 (LNB) */}
+      <Sidebar />
 
-        {isLoading ? (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400"></div>
-            <p className="mt-4 text-gray-400">데이터 로드 중...</p>
-          </div>
-        ) : (
-          <>
-            {/* 메인: 19개 공정 흐름도 */}
-            <ProcessFlowDiagram />
-
-            {/* 통계 차트 */}
-            <StatisticsDashboard 
-              processes={processes}
-              stopageRecords={stopageRecords}
-            />
-
-            {/* 정지/병목 분석 */}
-            <StopAndBottleneckChart 
-              stopCodes={stopCodes}
-              bottleneckCodes={bottleneckCodes}
-              stopageRecords={stopageRecords}
-            />
-          </>
-        )}
+      {/* 메인 영역 */}
+      <main className="flex-1 min-w-0 overflow-auto">
+        <ProcessFlowDiagram />
       </main>
     </div>
   );

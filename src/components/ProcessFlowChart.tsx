@@ -63,19 +63,19 @@ const ProcessFlowChart: React.FC<ProcessFlowChartProps> = ({
     const stopCount = stopageData[processNo] || 0;
     const efficiency = efficiencyData[processNo] ?? 100;
 
-    if (stopCount > 0) return 'border-red-500 bg-red-50';
-    if (efficiency < 70) return 'border-yellow-500 bg-yellow-50';
-    return 'border-green-500 bg-green-50';
+    if (stopCount > 0) return 'border-red-500 bg-red-950/40';
+    if (efficiency < 70) return 'border-yellow-500 bg-yellow-950/40';
+    return 'border-green-500 bg-green-950/40';
   };
 
   return (
-    <div className="w-full space-y-8 p-6 bg-gray-50 rounded-lg overflow-x-auto">
+    <div className="w-full space-y-8 p-6 bg-black rounded-lg overflow-x-auto">
       {Object.entries(groupedProcesses).map(([gubun, groupProcesses]) => (
         <div key={gubun} className="space-y-4">
           {/* 그룹 헤더 */}
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-2 h-8 bg-blue-600 rounded"></div>
-            <h3 className="text-lg font-bold text-gray-800">{gubun}</h3>
+            <div className="w-2 h-8 bg-blue-500 rounded"></div>
+            <h3 className="text-lg font-bold text-white">{gubun}</h3>
             <span className="text-sm text-gray-500 ml-auto">
               {groupProcesses.length}개 공정
             </span>
@@ -93,14 +93,14 @@ const ProcessFlowChart: React.FC<ProcessFlowChartProps> = ({
                   )} ${
                     selectedProcessNo === process.no
                       ? 'ring-2 ring-blue-400 shadow-lg'
-                      : 'hover:shadow-md'
+                      : 'hover:shadow-md hover:brightness-125'
                   }`}
                 >
                   {/* 상단 정보 */}
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex-1">
-                      <p className="text-xs text-gray-500">공정 #{process.no}</p>
-                      <p className="font-semibold text-sm text-gray-800 truncate">
+                      <p className="text-xs text-gray-400">공정 #{process.no}</p>
+                      <p className="font-semibold text-sm text-white truncate">
                         {process.jiheung}
                       </p>
                     </div>
@@ -108,7 +108,7 @@ const ProcessFlowChart: React.FC<ProcessFlowChartProps> = ({
                   </div>
 
                   {/* 기계 정보 */}
-                  <div className="text-xs space-y-1 text-gray-600 mb-3">
+                  <div className="text-xs space-y-1 text-gray-400 mb-3">
                     <p className="truncate" title={process.model}>
                       📦 {process.model}
                     </p>
@@ -119,15 +119,15 @@ const ProcessFlowChart: React.FC<ProcessFlowChartProps> = ({
 
                   {/* 통계 */}
                   {(stopageData[process.no] || efficiencyData[process.no]) && (
-                    <div className="space-y-1 pt-2 border-t">
+                    <div className="space-y-1 pt-2 border-t border-gray-700">
                       {stopageData[process.no] > 0 && (
-                        <p className="text-xs text-red-600 font-medium">
+                        <p className="text-xs text-red-400 font-medium">
                           정지: {stopageData[process.no]}회
                         </p>
                       )}
                       {efficiencyData[process.no] !== undefined && (
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-gray-300 rounded-full h-2">
+                          <div className="flex-1 bg-gray-800 rounded-full h-2">
                             <div
                               className="bg-green-500 h-2 rounded-full transition-all"
                               style={{
@@ -135,7 +135,7 @@ const ProcessFlowChart: React.FC<ProcessFlowChartProps> = ({
                               }}
                             ></div>
                           </div>
-                          <span className="text-xs font-medium">
+                          <span className="text-xs font-medium text-gray-300">
                             {Math.round(efficiencyData[process.no])}%
                           </span>
                         </div>
@@ -146,7 +146,7 @@ const ProcessFlowChart: React.FC<ProcessFlowChartProps> = ({
 
                 {/* 화살표 (마지막 아님) */}
                 {idx < groupProcesses.length - 1 && (
-                  <div className="flex-shrink-0 text-gray-400">
+                  <div className="flex-shrink-0 text-gray-600">
                     <ChevronRight className="w-6 h-6" />
                   </div>
                 )}
@@ -157,33 +157,33 @@ const ProcessFlowChart: React.FC<ProcessFlowChartProps> = ({
       ))}
 
       {/* 범례 */}
-      <div className="mt-8 pt-6 border-t border-gray-300">
+      <div className="mt-8 pt-6 border-t border-gray-800">
         <div className="flex flex-wrap gap-6 text-sm">
           <div className="flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-green-500" />
-            <span className="text-gray-600">정상 운영</span>
+            <span className="text-gray-400">정상 운영</span>
           </div>
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-yellow-500" />
-            <span className="text-gray-600">효율 저하 (&lt;70%)</span>
+            <span className="text-gray-400">효율 저하 (&lt;70%)</span>
           </div>
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 text-red-500" />
-            <span className="text-gray-600">정지 발생</span>
+            <span className="text-gray-400">정지 발생</span>
           </div>
         </div>
       </div>
 
       {/* 선택된 공정 상세 정보 */}
       {selectedProcessNo && (
-        <div className="mt-6 p-4 bg-white border-2 border-blue-400 rounded-lg">
+        <div className="mt-6 p-4 bg-gray-900 border-2 border-blue-500 rounded-lg">
           <div className="flex items-start gap-3">
-            <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+            <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="font-semibold text-gray-800">
+              <p className="font-semibold text-white">
                 공정 #{selectedProcessNo} 상세 정보
               </p>
-              <p className="text-sm text-gray-600 mt-1">
+              <p className="text-sm text-gray-400 mt-1">
                 우측 패널에서 상세 정보 및 통계를 확인할 수 있습니다.
               </p>
             </div>

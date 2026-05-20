@@ -3,7 +3,7 @@
 
 import React, { useMemo } from 'react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { Process, DailyStatistics } from ../../lib/types';
+import { Process, DailyStatistics } from '../lib/types';
 import { TrendingUp, TrendingDown, AlertTriangle, Gauge } from 'lucide-react';
 
 interface StatisticsDashboardProps {
@@ -28,7 +28,8 @@ const StatisticsDashboard: React.FC<StatisticsDashboardProps> = ({
 
   // 시간대별 통계
   const timeSeriesData = useMemo(() => {
-    return statistics.map((stat) => ({
+  if (!statistics || statistics.length === 0) return [];
+  return statistics.map((stat) => ({
       date: stat.date,
       downtime: stat.total_downtime_minutes || 0,
       stoppages: stat.total_stoppages || 0,
@@ -37,23 +38,34 @@ const StatisticsDashboard: React.FC<StatisticsDashboardProps> = ({
   }, [statistics]);
 
   // 종합 통계
-  const summary = useMemo(() => {
-    const totalStats = statistics.reduce(
-      (acc, stat) => ({
-        totalStoppages: acc.totalStoppages + (stat.total_stoppages || 0),
-        totalDowntime: acc.totalDowntime + (stat.total_downtime_minutes || 0),
-        avgEfficiency: acc.avgEfficiency + (100 - (stat.total_downtime_minutes || 0) / (24 * 60) * 100),
-      }),
-      { totalStoppages: 0, totalDowntime: 0, avgEfficiency: 0 }
-    );
-
+const summary = useMemo(() => {
+  if (!statistics || statistics.length === 0) {
     return {
-      totalStoppages: totalStats.totalStoppages,
-      totalDowntime: totalStats.totalDowntime,
-      avgEfficiency: statistics.length > 0 ? totalStats.avgEfficiency / statistics.length : 100,
-      averageStoppagePerDay: statistics.length > 0 ? totalStats.totalStoppages / statistics.length : 0,
+      totalStoppages: 0,
+      totalDowntime: 0,
+      avgEfficiency: 0,
+      averageStoppagePerDay: 0,
     };
-  }, [statistics]);
+  }
+  const totalStats = statistics.reduce(
+    (acc, stat) => ({
+      totalStoppages: acc.totalStoppages + (stat.total_stoppages || 0),
+      totalDowntime: acc.totalDowntime + (stat.total_downtime_minutes || 0),
+    }),
+    { totalStoppages: 0, totalDowntime: 0 }
+  );
+  
+  const avgEfficiency = timeSeriesData.length > 0
+    ? timeSeriesData.reduce((sum, d) => sum + d.efficiency, 0) / timeSeriesData.length
+    : 0;
+  
+  return {
+    totalStoppages: totalStats.totalStoppages,
+    totalDowntime: totalStats.totalDowntime,
+    avgEfficiency: avgEfficiency,
+    averageStoppagePerDay: totalStats.totalStoppages / statistics.length,
+  };
+}, [statistics, timeSeriesData]);
 
   return (
     <div className="space-y-6 p-6 bg-gray-50">
@@ -108,7 +120,7 @@ const StatisticsDashboard: React.FC<StatisticsDashboardProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <p className="text-gray-600 text-sm">분석 기간</p>
-              <p className="text-2xl font-bold text-gray-800 mt-1">{statistics.length}</p>
+              <p className="text-2xl font-bold text-gray-800 mt-1">{statistics?.length || 0}</p>
               <p className="text-xs text-gray-500 mt-2">일 기준 데이터</p>
             </div>
             <TrendingUp className="w-10 h-10 text-blue-500 opacity-20" />

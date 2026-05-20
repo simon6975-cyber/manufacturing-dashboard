@@ -2,8 +2,8 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Process } from ../../lib/types';
-import useAppStore from ../../store/useAppStore';
+import { Process } from '../lib/types';
+import useAppStore from '../store/useAppStore';
 import {
   AlertCircle,
   CheckCircle,

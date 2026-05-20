@@ -3,7 +3,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Navigation from '../components/Navigation';
-import ProcessFlowChart from '../components/ProcessFlowChart';
+import ProcessFlowDiagram from '../components/ProcessFlowDiagram';
 import StopAndBottleneckChart from '../components/StopAndBottleneckChart';
 import StatisticsDashboard from '../components/StatisticsDashboard';
 import { Process, StopCode, BottleneckCode, StopageRecord } from '../lib/types';
@@ -49,7 +49,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-black text-white">
       <Navigation />
-      <main className="max-w-7xl mx-auto px-4 py-8">
+      <main className="max-w-[1600px] mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white flex items-center gap-2">
             <Factory className="w-8 h-8 text-blue-400" />
@@ -65,13 +65,16 @@ export default function Home() {
           </div>
         ) : (
           <>
+            {/* 메인: 19개 공정 흐름도 */}
+            <ProcessFlowDiagram />
+
+            {/* 통계 차트 */}
             <StatisticsDashboard 
               processes={processes}
               stopageRecords={stopageRecords}
             />
-            <ProcessFlowChart 
-              processes={processes}
-            />
+
+            {/* 정지/병목 분석 */}
             <StopAndBottleneckChart 
               stopCodes={stopCodes}
               bottleneckCodes={bottleneckCodes}

@@ -47,7 +47,7 @@ const processes: ProcessData[] = [
 ];
 
 // ============================================
-// 상태별 스타일 설정
+// 상태별 스타일 — 톤 다운된 색상 (예전 HTML 버전 느낌)
 // ============================================
 const statusConfig: Record<Status, {
   banner: string;
@@ -56,10 +56,10 @@ const statusConfig: Record<Status, {
   bar: string;
   icon: React.ComponentType<{ className?: string }> | null;
 }> = {
-  RUN:   { banner: 'bg-green-500',  text: 'text-white', border: 'border-green-500/50',  bar: 'bg-green-500',  icon: null },
-  IDLE:  { banner: 'bg-amber-500',  text: 'text-white', border: 'border-amber-500/50',  bar: 'bg-amber-500',  icon: null },
-  STOP:  { banner: 'bg-red-500',    text: 'text-white', border: 'border-red-500/50',    bar: 'bg-red-500',    icon: AlertTriangle },
-  SETUP: { banner: 'bg-blue-500',   text: 'text-white', border: 'border-blue-500/50',   bar: 'bg-blue-500',   icon: null },
+  RUN:   { banner: 'bg-green-700/85',  text: 'text-green-50',  border: 'border-green-700/40',  bar: 'bg-green-600/80',  icon: null },
+  IDLE:  { banner: 'bg-amber-700/85',  text: 'text-amber-50',  border: 'border-amber-700/40',  bar: 'bg-amber-600/80',  icon: null },
+  STOP:  { banner: 'bg-red-700/85',    text: 'text-red-50',    border: 'border-red-700/40',    bar: 'bg-red-600/80',    icon: AlertTriangle },
+  SETUP: { banner: 'bg-blue-700/85',   text: 'text-blue-50',   border: 'border-blue-700/40',   bar: 'bg-blue-600/80',   icon: null },
 };
 
 // ============================================
@@ -79,33 +79,33 @@ const ProcessCard: React.FC<{ process: ProcessData }> = ({ process }) => {
           {StatusIcon && <StatusIcon className="w-3 h-3" />}
           {process.status}
         </span>
-        <span className="font-mono opacity-80">{String(process.no).padStart(2, '0')}</span>
+        <span className="font-mono opacity-70">{String(process.no).padStart(2, '0')}</span>
       </div>
 
       {/* 카드 본문 */}
       <div className="p-2.5 flex-1 flex flex-col">
         {/* 공정명 */}
-        <h3 className="text-white text-[13px] font-semibold mb-2 truncate" title={process.name}>
+        <h3 className="text-gray-100 text-[13px] font-semibold mb-2 truncate" title={process.name}>
           {process.name}
         </h3>
 
         {/* 3개 수치 박스 */}
         <div className="grid grid-cols-3 gap-1 mb-1.5">
-          <div className="bg-gray-800/60 border border-gray-700/40 rounded px-1 py-1 text-center">
+          <div className="bg-gray-800/50 border border-gray-700/30 rounded px-1 py-1 text-center">
             <p className="text-[9px] text-gray-500 leading-tight">생산</p>
-            <p className="text-[13px] font-bold text-white leading-tight mt-0.5">
+            <p className="text-[13px] font-bold text-gray-100 leading-tight mt-0.5">
               {process.production.toLocaleString()}
             </p>
           </div>
-          <div className="bg-amber-950/40 border border-amber-900/30 rounded px-1 py-1 text-center">
-            <p className="text-[9px] text-gray-400 leading-tight">대기</p>
-            <p className="text-[13px] font-bold text-amber-300 leading-tight mt-0.5">
+          <div className="bg-amber-950/25 border border-amber-900/20 rounded px-1 py-1 text-center">
+            <p className="text-[9px] text-gray-500 leading-tight">대기</p>
+            <p className="text-[13px] font-bold text-amber-500/90 leading-tight mt-0.5">
               {process.waiting.toLocaleString()}
             </p>
           </div>
-          <div className="bg-red-950/40 border border-red-900/30 rounded px-1 py-1 text-center">
-            <p className="text-[9px] text-gray-400 leading-tight">잔여</p>
-            <p className="text-[13px] font-bold text-red-400 leading-tight mt-0.5">
+          <div className="bg-red-950/25 border border-red-900/20 rounded px-1 py-1 text-center">
+            <p className="text-[9px] text-gray-500 leading-tight">잔여</p>
+            <p className="text-[13px] font-bold text-red-500/90 leading-tight mt-0.5">
               {process.remaining.toLocaleString()}
             </p>
           </div>
@@ -125,7 +125,7 @@ const ProcessCard: React.FC<{ process: ProcessData }> = ({ process }) => {
 // ============================================
 const Arrow: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => (
   <div className="flex items-center justify-center shrink-0">
-    <ChevronRight className={`${size === 'lg' ? 'w-7 h-7' : 'w-4 h-4'} text-gray-600`} />
+    <ChevronRight className={`${size === 'lg' ? 'w-7 h-7' : 'w-4 h-4'} text-gray-700`} />
   </div>
 );
 
@@ -137,8 +137,8 @@ const GroupBox: React.FC<{
   titleColor?: string;
   children: React.ReactNode;
   className?: string;
-}> = ({ title, titleColor = 'text-blue-400', children, className = '' }) => (
-  <div className={`relative rounded-lg border border-dashed border-gray-700 px-3 pt-5 pb-3 ${className}`}>
+}> = ({ title, titleColor = 'text-blue-500/80', children, className = '' }) => (
+  <div className={`relative rounded-lg border border-dashed border-gray-800 px-3 pt-5 pb-3 ${className}`}>
     <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[11px] font-bold tracking-wider ${titleColor}`}>
       {title}
     </span>
@@ -180,7 +180,7 @@ const ProcessFlowDiagram: React.FC = () => {
       {/* 상단 헤더 */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-white">제작공정 흐름도</h2>
+          <h2 className="text-2xl font-bold text-gray-100">제작공정 흐름도</h2>
           <p className="text-xs text-gray-500 mt-1">
             내지 · 표지 (병렬) → 제본 → 포장 · 실시간 상태 모니터링
           </p>
@@ -190,7 +190,7 @@ const ProcessFlowDiagram: React.FC = () => {
           <Legend color="amber" label="IDLE" />
           <Legend color="red" label="STOP" />
           <Legend color="blue" label="SETUP" />
-          <button className="flex items-center gap-1.5 px-2.5 py-1 ml-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition-colors text-[11px]">
+          <button className="flex items-center gap-1.5 px-2.5 py-1 ml-1 rounded bg-gray-800/80 hover:bg-gray-700 text-gray-400 font-medium transition-colors text-[11px]">
             <RefreshCw className="w-3 h-3" />
             새로고침
           </button>
@@ -211,7 +211,7 @@ const ProcessFlowDiagram: React.FC = () => {
         {/* === 좌측: 내지 + 표지 === */}
         <div className="flex flex-col gap-3 min-w-0">
           {/* 내지 */}
-          <GroupBox title="내지" titleColor="text-blue-400">
+          <GroupBox title="내지" titleColor="text-blue-500/80">
             <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
               <ProcessCard process={p[1]} />
               <Arrow />
@@ -223,7 +223,7 @@ const ProcessFlowDiagram: React.FC = () => {
           </GroupBox>
 
           {/* 표지 */}
-          <GroupBox title="표지" titleColor="text-pink-400">
+          <GroupBox title="표지" titleColor="text-pink-500/80">
             <div
               className="grid gap-2 items-center"
               style={{
@@ -258,7 +258,7 @@ const ProcessFlowDiagram: React.FC = () => {
 
         {/* === 중앙: 제본 === */}
         <div className="min-w-0">
-          <GroupBox title="제본" titleColor="text-blue-400" className="h-full">
+          <GroupBox title="제본" titleColor="text-blue-500/80" className="h-full">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-2 h-full">
               {[12, 13, 14, 15, 16, 17].map((n) => (
                 <ProcessCard key={n} process={p[n]} />
@@ -274,7 +274,7 @@ const ProcessFlowDiagram: React.FC = () => {
 
         {/* === 우측: 포장 === */}
         <div className="min-w-0">
-          <GroupBox title="포장" titleColor="text-cyan-400" className="h-full">
+          <GroupBox title="포장" titleColor="text-cyan-500/80" className="h-full">
             <div className="grid grid-cols-1 gap-2 h-full">
               <ProcessCard process={p[18]} />
               <ProcessCard process={p[19]} />
@@ -286,28 +286,28 @@ const ProcessFlowDiagram: React.FC = () => {
       {/* 하단 합계 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <TotalCard label="전 공정 누적 생산량" value={totals.production} unit="매" color="white" />
-        <TotalCard label="총 대기 물량" value={totals.waiting} color="amber" border="border-l-amber-500" />
-        <TotalCard label="총 잔여 물량" value={totals.remaining} color="red" border="border-l-red-500" />
+        <TotalCard label="총 대기 물량" value={totals.waiting} color="amber" border="border-l-amber-700/60" />
+        <TotalCard label="총 잔여 물량" value={totals.remaining} color="red" border="border-l-red-700/60" />
       </div>
     </div>
   );
 };
 
 // ============================================
-// 보조 컴포넌트들
+// 보조 컴포넌트들 — 톤 다운 적용
 // ============================================
 const Legend: React.FC<{ color: 'green' | 'amber' | 'red' | 'blue'; label: string }> = ({ color, label }) => {
   const map = {
-    green: 'bg-green-500/10 border-green-500/30 text-green-400',
-    amber: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
-    red: 'bg-red-500/10 border-red-500/30 text-red-400',
-    blue: 'bg-blue-500/10 border-blue-500/30 text-blue-400',
+    green: 'bg-green-900/30 border-green-800/40 text-green-500/90',
+    amber: 'bg-amber-900/30 border-amber-800/40 text-amber-500/90',
+    red:   'bg-red-900/30 border-red-800/40 text-red-500/90',
+    blue:  'bg-blue-900/30 border-blue-800/40 text-blue-500/90',
   };
   const dotMap = {
-    green: 'bg-green-500',
-    amber: 'bg-amber-500',
-    red: 'bg-red-500',
-    blue: 'bg-blue-500',
+    green: 'bg-green-600',
+    amber: 'bg-amber-600',
+    red: 'bg-red-600',
+    blue: 'bg-blue-600',
   };
   return (
     <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${map[color]} font-medium`}>
@@ -325,18 +325,18 @@ const StatusCount: React.FC<{
   color: 'green' | 'amber' | 'red' | 'blue';
 }> = ({ icon: Icon, label, count, total, color }) => {
   const bgMap = {
-    green: 'bg-green-500/20 text-green-400',
-    amber: 'bg-amber-500/20 text-amber-400',
-    red: 'bg-red-500/20 text-red-400',
-    blue: 'bg-blue-500/20 text-blue-400',
+    green: 'bg-green-900/30 text-green-500/90 border border-green-800/30',
+    amber: 'bg-amber-900/30 text-amber-500/90 border border-amber-800/30',
+    red:   'bg-red-900/30 text-red-500/90 border border-red-800/30',
+    blue:  'bg-blue-900/30 text-blue-500/90 border border-blue-800/30',
   };
   return (
-    <div className="bg-gray-900 rounded-lg p-3 border border-gray-800 flex items-center gap-3">
+    <div className="bg-gray-900/80 rounded-lg p-3 border border-gray-800 flex items-center gap-3">
       <div className={`w-10 h-10 rounded flex items-center justify-center ${bgMap[color]}`}>
         <Icon className="w-5 h-5" />
       </div>
       <div>
-        <p className="text-xl font-bold text-white leading-tight">
+        <p className="text-xl font-bold text-gray-100 leading-tight">
           {count}
           {total !== undefined && (
             <span className="text-xs text-gray-500 font-normal ml-1">/ {total}</span>
@@ -356,13 +356,13 @@ const TotalCard: React.FC<{
   border?: string;
 }> = ({ label, value, unit, color = 'white', border = '' }) => {
   const colorMap = {
-    white: 'text-white',
-    amber: 'text-amber-400',
-    red: 'text-red-400',
+    white: 'text-gray-100',
+    amber: 'text-amber-500/90',
+    red:   'text-red-500/90',
   };
   return (
-    <div className={`bg-gray-900 rounded-lg px-4 py-3 border border-gray-800 ${border ? `border-l-4 ${border}` : ''}`}>
-      <p className="text-xs text-gray-400 mb-1">{label}</p>
+    <div className={`bg-gray-900/80 rounded-lg px-4 py-3 border border-gray-800 ${border ? `border-l-4 ${border}` : ''}`}>
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
       <p className={`text-2xl font-bold ${colorMap[color]}`}>
         {value.toLocaleString()}
         {unit && <span className="text-sm text-gray-500 font-normal ml-1">{unit}</span>}

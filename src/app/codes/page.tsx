@@ -321,6 +321,27 @@ export default function CodesPage() {
     );
   }, [stopCodes, bottleneckCodes, baselineStop, baselineBn]);
 
+  // 중복 코드 감지 (정지/병목 각각 + 두 그룹 간 교차)
+  const duplicateCodes = useMemo(() => {
+    const allCodes = [
+      ...stopCodes.map((c) => c.code.trim()),
+      ...bottleneckCodes.map((c) => c.code.trim()),
+    ];
+    const counts: Record<string, number> = {};
+    allCodes.forEach((c) => {
+      if (!c) return;
+      counts[c] = (counts[c] || 0) + 1;
+    });
+    return new Set(Object.entries(counts).filter(([, n]) => n > 1).map(([c]) => c));
+  }, [stopCodes, bottleneckCodes]);
+
+  const hasEmptyCode = useMemo(() => {
+    return (
+      stopCodes.some((c) => !c.code.trim()) ||
+      bottleneckCodes.some((c) => !c.code.trim())
+    );
+  }, [stopCodes, bottleneckCodes]);
+
   // ============================================
   // 초기 로드 (Firebase에서)
   // ============================================
@@ -507,6 +528,20 @@ export default function CodesPage() {
       alert('상단의 [작업자] 이름을 입력해주세요.');
       return;
     }
+    // 중복/빈 코드 확인
+    if (duplicateCodes.size > 0 || hasEmptyCode) {
+      const issues: string[] = [];
+      if (duplicateCodes.size > 0) {
+        issues.push(`• 중복된 코드: ${Array.from(duplicateCodes).join(', ')}`);
+      }
+      if (hasEmptyCode) {
+        issues.push('• 비어 있는 코드가 있습니다');
+      }
+      const ok = confirm(
+        `⚠️ 다음 문제가 있습니다:\n\n${issues.join('\n')}\n\n그래도 저장하시겠습니까?`
+      );
+      if (!ok) return;
+    }
     try {
       setSaving(true);
       const summary = calculateChangeSummary();
@@ -585,6 +620,12 @@ export default function CodesPage() {
                 코드를 추가, 수정, 삭제하고 활성/비활성 상태를 관리합니다
                 {hasChanges && (
                   <span className="ml-2 text-amber-400 font-medium">• 저장되지 않은 변경 사항이 있습니다</span>
+                )}
+                {duplicateCodes.size > 0 && (
+                  <span className="ml-2 text-red-400 font-medium">• 중복된 코드 {duplicateCodes.size}개</span>
+                )}
+                {hasEmptyCode && (
+                  <span className="ml-2 text-red-400 font-medium">• 비어 있는 코드 있음</span>
                 )}
               </p>
             </div>
@@ -688,8 +729,17 @@ export default function CodesPage() {
                               <td className="py-2 px-1 text-center">
                                 <DragHandle handleProps={handleProps} />
                               </td>
-                              <td className="px-3 py-2 text-gray-300 font-mono text-sm font-medium">
-                                {code.code}
+                              <td className="px-3 py-2">
+                                <EditableCell
+                                  value={code.code}
+                                  onChange={(v) => updateStopCode(code.id, 'code', v)}
+                                  placeholder="코드"
+                                  className={`font-mono font-medium ${
+                                    duplicateCodes.has(code.code.trim())
+                                      ? '!text-red-400 ring-1 ring-red-500/40'
+                                      : '!text-gray-300'
+                                  }`}
+                                />
                               </td>
                               <td className="px-3 py-2">
                                 <EditableCell
@@ -780,8 +830,17 @@ export default function CodesPage() {
                               <td className="py-2 px-1 text-center">
                                 <DragHandle handleProps={handleProps} />
                               </td>
-                              <td className="px-3 py-2 text-gray-300 font-mono text-sm font-medium">
-                                {code.code}
+                              <td className="px-3 py-2">
+                                <EditableCell
+                                  value={code.code}
+                                  onChange={(v) => updateBottleneckCode(code.id, 'code', v)}
+                                  placeholder="코드"
+                                  className={`font-mono font-medium ${
+                                    duplicateCodes.has(code.code.trim())
+                                      ? '!text-red-400 ring-1 ring-red-500/40'
+                                      : '!text-gray-300'
+                                  }`}
+                                />
                               </td>
                               <td className="px-3 py-2">
                                 <EditableCell

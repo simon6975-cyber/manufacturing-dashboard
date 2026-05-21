@@ -38,36 +38,36 @@ body {
 }
 
 /* ============================================
-   STOP 상태 깜박임 효과 (정지 카드용)
-   빨간색 글로우가 1.8초 주기로 강해졌다 약해졌다 함
+   STOP 상태 깜박임 효과 (파스텔 로즈 톤)
+   rgb(251,113,133) = rose-400
    ============================================ */
 @keyframes stop-pulse-glow {
   0%, 100% {
     box-shadow:
-      0 0 0 0 rgba(239, 68, 68, 0),
-      0 0 8px 0 rgba(239, 68, 68, 0.2);
+      0 0 0 0 rgba(251, 113, 133, 0),
+      0 0 6px 0 rgba(251, 113, 133, 0.18);
   }
   50% {
     box-shadow:
-      0 0 0 3px rgba(239, 68, 68, 0.35),
-      0 0 22px 4px rgba(239, 68, 68, 0.55);
+      0 0 0 2px rgba(251, 113, 133, 0.3),
+      0 0 18px 3px rgba(251, 113, 133, 0.45);
   }
 }
 
 .animate-stop-pulse {
-  animation: stop-pulse-glow 1.8s ease-in-out infinite;
+  animation: stop-pulse-glow 2s ease-in-out infinite;
 }
 
-/* STOP 배너의 부드러운 깜박임 (텍스트 가독성 유지하면서 살짝 밝아졌다 어두워짐) */
+/* STOP 배너의 부드러운 깜박임 */
 @keyframes stop-banner-pulse {
   0%, 100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.85;
+    opacity: 0.82;
   }
 }
 
 .animate-stop-banner {
-  animation: stop-banner-pulse 1.8s ease-in-out infinite;
+  animation: stop-banner-pulse 2s ease-in-out infinite;
 }

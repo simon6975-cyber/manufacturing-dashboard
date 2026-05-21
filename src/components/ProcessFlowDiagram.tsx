@@ -21,12 +21,10 @@ interface ProcessData {
 // 19개 공정 데이터
 // ============================================
 const processes: ProcessData[] = [
-  // 내지 (1~4)
   { no: 1, name: '연속지출력 1호기', model: '520HD+', maker: 'SCREEN', status: 'RUN', production: 9318, waiting: 1280, remaining: 3682 },
   { no: 2, name: '연속지출력 2호기', model: '520HD+', maker: 'SCREEN', status: 'RUN', production: 7939, waiting: 2388, remaining: 5061 },
   { no: 3, name: 'R2C 1호기', model: 'S2020', maker: 'TECHNAU', status: 'RUN', production: 5047, waiting: 1190, remaining: 4953 },
   { no: 4, name: 'R2C 2호기', model: 'S2320', maker: 'TECHNAU', status: 'IDLE', production: 4239, waiting: 2071, remaining: 5761 },
-  // 표지 (5~11)
   { no: 5, name: '날장출력 1호기', model: '이리데스', maker: 'FUJI FILM', status: 'RUN', production: 2424, waiting: 488, remaining: 1076 },
   { no: 6, name: '날장출력 2호기', model: '레보리아', maker: 'FUJI FILM', status: 'STOP', production: 714, waiting: 991, remaining: 2786 },
   { no: 7, name: '코팅 1호기', model: 'EUROLAM 540', maker: 'GMP', status: 'RUN', production: 4402, waiting: 800, remaining: 598 },
@@ -34,20 +32,19 @@ const processes: ProcessData[] = [
   { no: 9, name: '에폭시', model: 'DDC 810', maker: 'DUPLO', status: 'RUN', production: 1336, waiting: 361, remaining: 664 },
   { no: 10, name: '수동재단 1호기', model: 'POLAR 92', maker: 'HEIDELBERG', status: 'RUN', production: 3373, waiting: 695, remaining: 2627 },
   { no: 11, name: '수동재단 2호기', model: 'C860', maker: '대호', status: 'IDLE', production: 2802, waiting: 1211, remaining: 3198 },
-  // 제본 (12~17)
   { no: 12, name: '제본 1호기', model: 'BQ470/HT80', maker: 'HORIZON', status: 'RUN', production: 1500, waiting: 273, remaining: 500 },
   { no: 13, name: '제본 2호기', model: 'BQ470/HT80', maker: 'HORIZON', status: 'RUN', production: 1288, waiting: 143, remaining: 712 },
   { no: 14, name: '제본 3호기', model: 'BQ500/HT300', maker: 'HORIZON', status: 'STOP', production: 382, waiting: 863, remaining: 1818 },
   { no: 15, name: '중철기', model: 'SPF-200A', maker: 'HORIZON', status: 'RUN', production: 2911, waiting: 322, remaining: 589 },
   { no: 16, name: '날개접지기', model: 'ZK320', maker: '', status: 'SETUP', production: 1173, waiting: 568, remaining: 1327 },
   { no: 17, name: '시험지접지기', model: 'CSMO', maker: 'HUNKELER', status: 'IDLE', production: 522, waiting: 548, remaining: 1278 },
-  // 포장 (18~19)
   { no: 18, name: '박스포장', model: '', maker: '', status: 'RUN', production: 770, waiting: 297, remaining: 730 },
   { no: 19, name: '댐지포장', model: '', maker: '', status: 'IDLE', production: 646, waiting: 508, remaining: 854 },
 ];
 
 // ============================================
-// 상태별 스타일 — 첫 번째 스크린샷의 밝은 색상으로 복원
+// 상태별 스타일 — 파스텔 톤
+// 배경은 부드러운 파스텔, 텍스트는 어두운 색으로 가독성 확보
 // ============================================
 const statusConfig: Record<Status, {
   banner: string;
@@ -56,10 +53,10 @@ const statusConfig: Record<Status, {
   bar: string;
   icon: React.ComponentType<{ className?: string }> | null;
 }> = {
-  RUN:   { banner: 'bg-green-500',  text: 'text-white', border: 'border-green-500/50',  bar: 'bg-green-500',  icon: null },
-  IDLE:  { banner: 'bg-amber-500',  text: 'text-white', border: 'border-amber-500/50',  bar: 'bg-amber-500',  icon: null },
-  STOP:  { banner: 'bg-red-500',    text: 'text-white', border: 'border-red-500/60',    bar: 'bg-red-500',    icon: AlertTriangle },
-  SETUP: { banner: 'bg-blue-500',   text: 'text-white', border: 'border-blue-500/50',   bar: 'bg-blue-500',   icon: null },
+  RUN:   { banner: 'bg-emerald-400', text: 'text-emerald-950', border: 'border-emerald-400/40', bar: 'bg-emerald-400', icon: null },
+  IDLE:  { banner: 'bg-amber-300',   text: 'text-amber-950',   border: 'border-amber-300/45',   bar: 'bg-amber-300',   icon: null },
+  STOP:  { banner: 'bg-rose-400',    text: 'text-rose-950',    border: 'border-rose-400/50',    bar: 'bg-rose-400',    icon: AlertTriangle },
+  SETUP: { banner: 'bg-sky-400',     text: 'text-sky-950',     border: 'border-sky-400/40',     bar: 'bg-sky-400',     icon: null },
 };
 
 // ============================================
@@ -88,33 +85,33 @@ const ProcessCard: React.FC<{ process: ProcessData }> = ({ process }) => {
           {StatusIcon && <StatusIcon className="w-3 h-3" />}
           {process.status}
         </span>
-        <span className="font-mono opacity-80">{String(process.no).padStart(2, '0')}</span>
+        <span className="font-mono opacity-70">{String(process.no).padStart(2, '0')}</span>
       </div>
 
       {/* 카드 본문 */}
       <div className="p-2.5 flex-1 flex flex-col">
         {/* 공정명 */}
-        <h3 className="text-white text-[13px] font-semibold mb-2 truncate" title={process.name}>
+        <h3 className="text-gray-100 text-[13px] font-semibold mb-2 truncate" title={process.name}>
           {process.name}
         </h3>
 
         {/* 3개 수치 박스 */}
         <div className="grid grid-cols-3 gap-1 mb-1.5">
-          <div className="bg-gray-800/60 border border-gray-700/40 rounded px-1 py-1 text-center">
+          <div className="bg-gray-800/50 border border-gray-700/30 rounded px-1 py-1 text-center">
             <p className="text-[9px] text-gray-500 leading-tight">생산</p>
-            <p className="text-[13px] font-bold text-white leading-tight mt-0.5">
+            <p className="text-[13px] font-bold text-gray-100 leading-tight mt-0.5">
               {process.production.toLocaleString()}
             </p>
           </div>
-          <div className="bg-amber-950/40 border border-amber-900/30 rounded px-1 py-1 text-center">
+          <div className="bg-amber-300/10 border border-amber-300/20 rounded px-1 py-1 text-center">
             <p className="text-[9px] text-gray-400 leading-tight">대기</p>
-            <p className="text-[13px] font-bold text-amber-300 leading-tight mt-0.5">
+            <p className="text-[13px] font-bold text-amber-200 leading-tight mt-0.5">
               {process.waiting.toLocaleString()}
             </p>
           </div>
-          <div className="bg-red-950/40 border border-red-900/30 rounded px-1 py-1 text-center">
+          <div className="bg-rose-300/10 border border-rose-300/20 rounded px-1 py-1 text-center">
             <p className="text-[9px] text-gray-400 leading-tight">잔여</p>
-            <p className="text-[13px] font-bold text-red-400 leading-tight mt-0.5">
+            <p className="text-[13px] font-bold text-rose-300 leading-tight mt-0.5">
               {process.remaining.toLocaleString()}
             </p>
           </div>
@@ -139,14 +136,14 @@ const Arrow: React.FC<{ size?: 'sm' | 'lg' }> = ({ size = 'sm' }) => (
 );
 
 // ============================================
-// 그룹 컨테이너 (점선 테두리 + 컬러 제목)
+// 그룹 컨테이너
 // ============================================
 const GroupBox: React.FC<{
   title: string;
   titleColor?: string;
   children: React.ReactNode;
   className?: string;
-}> = ({ title, titleColor = 'text-blue-400', children, className = '' }) => (
+}> = ({ title, titleColor = 'text-sky-300', children, className = '' }) => (
   <div className={`relative rounded-lg border border-dashed border-gray-700 px-3 pt-5 pb-3 ${className}`}>
     <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[11px] font-bold tracking-wider ${titleColor}`}>
       {title}
@@ -159,21 +156,18 @@ const GroupBox: React.FC<{
 // 메인 컴포넌트
 // ============================================
 const ProcessFlowDiagram: React.FC = () => {
-  // 공정 번호로 빠르게 가져오기
   const p = useMemo(() => {
     const map: Record<number, ProcessData> = {};
     processes.forEach((proc) => { map[proc.no] = proc; });
     return map;
   }, []);
 
-  // 상태별 카운트
   const statusCounts = useMemo(() => {
     const counts = { RUN: 0, IDLE: 0, STOP: 0, SETUP: 0 };
     processes.forEach((proc) => counts[proc.status]++);
     return counts;
   }, []);
 
-  // 합계
   const totals = useMemo(() => {
     let production = 0, waiting = 0, remaining = 0;
     processes.forEach((proc) => {
@@ -189,16 +183,16 @@ const ProcessFlowDiagram: React.FC = () => {
       {/* 상단 헤더 */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-white">제작공정 흐름도</h2>
+          <h2 className="text-2xl font-bold text-gray-100">제작공정 흐름도</h2>
           <p className="text-xs text-gray-500 mt-1">
             내지 · 표지 (병렬) → 제본 → 포장 · 실시간 상태 모니터링
           </p>
         </div>
         <div className="flex items-center gap-1.5 text-[11px]">
-          <Legend color="green" label="RUN" />
+          <Legend color="emerald" label="RUN" />
           <Legend color="amber" label="IDLE" />
-          <Legend color="red" label="STOP" pulse />
-          <Legend color="blue" label="SETUP" />
+          <Legend color="rose" label="STOP" pulse />
+          <Legend color="sky" label="SETUP" />
           <button className="flex items-center gap-1.5 px-2.5 py-1 ml-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition-colors text-[11px]">
             <RefreshCw className="w-3 h-3" />
             새로고침
@@ -208,19 +202,18 @@ const ProcessFlowDiagram: React.FC = () => {
 
       {/* 상태별 카운트 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatusCount icon={Play} label="가동 중" count={statusCounts.RUN} total={19} color="green" />
+        <StatusCount icon={Play} label="가동 중" count={statusCounts.RUN} total={19} color="emerald" />
         <StatusCount icon={Pause} label="대기 중" count={statusCounts.IDLE} color="amber" />
-        <StatusCount icon={AlertCircle} label="정지" count={statusCounts.STOP} color="red" pulse />
-        <StatusCount icon={Settings} label="셋업" count={statusCounts.SETUP} color="blue" />
+        <StatusCount icon={AlertCircle} label="정지" count={statusCounts.STOP} color="rose" pulse />
+        <StatusCount icon={Settings} label="셋업" count={statusCounts.SETUP} color="sky" />
       </div>
 
       {/* 메인 흐름도 */}
       <div className="flex-1 grid grid-cols-1 xl:grid-cols-[1fr_auto_minmax(0,0.55fr)_auto_minmax(0,0.18fr)] gap-3 items-stretch">
         
-        {/* === 좌측: 내지 + 표지 === */}
+        {/* 좌측: 내지 + 표지 */}
         <div className="flex flex-col gap-3 min-w-0">
-          {/* 내지 */}
-          <GroupBox title="내지" titleColor="text-blue-400">
+          <GroupBox title="내지" titleColor="text-sky-300">
             <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
               <ProcessCard process={p[1]} />
               <Arrow />
@@ -231,8 +224,7 @@ const ProcessFlowDiagram: React.FC = () => {
             </div>
           </GroupBox>
 
-          {/* 표지 */}
-          <GroupBox title="표지" titleColor="text-pink-400">
+          <GroupBox title="표지" titleColor="text-pink-300">
             <div
               className="grid gap-2 items-center"
               style={{
@@ -240,19 +232,16 @@ const ProcessFlowDiagram: React.FC = () => {
                 gridTemplateRows: 'auto auto',
               }}
             >
-              {/* row 1 */}
               <div style={{ gridColumn: '1', gridRow: '1' }}><ProcessCard process={p[5]} /></div>
               <div style={{ gridColumn: '2', gridRow: '1' }} className="flex items-center"><Arrow /></div>
               <div style={{ gridColumn: '3', gridRow: '1' }}><ProcessCard process={p[7]} /></div>
               <div style={{ gridColumn: '5', gridRow: '1' }}><ProcessCard process={p[10]} /></div>
 
-              {/* row 2 */}
               <div style={{ gridColumn: '1', gridRow: '2' }}><ProcessCard process={p[6]} /></div>
               <div style={{ gridColumn: '2', gridRow: '2' }} className="flex items-center"><Arrow /></div>
               <div style={{ gridColumn: '3', gridRow: '2' }}><ProcessCard process={p[8]} /></div>
               <div style={{ gridColumn: '5', gridRow: '2' }}><ProcessCard process={p[11]} /></div>
 
-              {/* 09 에폭시 - 가운데 (행 사이) */}
               <div style={{ gridColumn: '4', gridRow: '1 / span 2' }} className="flex items-center">
                 <ProcessCard process={p[9]} />
               </div>
@@ -260,14 +249,13 @@ const ProcessFlowDiagram: React.FC = () => {
           </GroupBox>
         </div>
 
-        {/* 큰 화살표: 내지/표지 → 제본 */}
         <div className="hidden xl:flex items-center justify-center">
           <Arrow size="lg" />
         </div>
 
-        {/* === 중앙: 제본 === */}
+        {/* 중앙: 제본 */}
         <div className="min-w-0">
-          <GroupBox title="제본" titleColor="text-blue-400" className="h-full">
+          <GroupBox title="제본" titleColor="text-sky-300" className="h-full">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-2 h-full">
               {[12, 13, 14, 15, 16, 17].map((n) => (
                 <ProcessCard key={n} process={p[n]} />
@@ -276,14 +264,13 @@ const ProcessFlowDiagram: React.FC = () => {
           </GroupBox>
         </div>
 
-        {/* 큰 화살표: 제본 → 포장 */}
         <div className="hidden xl:flex items-center justify-center">
           <Arrow size="lg" />
         </div>
 
-        {/* === 우측: 포장 === */}
+        {/* 우측: 포장 */}
         <div className="min-w-0">
-          <GroupBox title="포장" titleColor="text-cyan-400" className="h-full">
+          <GroupBox title="포장" titleColor="text-cyan-300" className="h-full">
             <div className="grid grid-cols-1 gap-2 h-full">
               <ProcessCard process={p[18]} />
               <ProcessCard process={p[19]} />
@@ -295,8 +282,8 @@ const ProcessFlowDiagram: React.FC = () => {
       {/* 하단 합계 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <TotalCard label="전 공정 누적 생산량" value={totals.production} unit="매" color="white" />
-        <TotalCard label="총 대기 물량" value={totals.waiting} color="amber" border="border-l-amber-500" />
-        <TotalCard label="총 잔여 물량" value={totals.remaining} color="red" border="border-l-red-500" />
+        <TotalCard label="총 대기 물량" value={totals.waiting} color="amber" border="border-l-amber-300/70" />
+        <TotalCard label="총 잔여 물량" value={totals.remaining} color="rose" border="border-l-rose-400/70" />
       </div>
     </div>
   );
@@ -305,18 +292,20 @@ const ProcessFlowDiagram: React.FC = () => {
 // ============================================
 // 보조 컴포넌트
 // ============================================
-const Legend: React.FC<{ color: 'green' | 'amber' | 'red' | 'blue'; label: string; pulse?: boolean }> = ({ color, label, pulse }) => {
-  const map = {
-    green: 'bg-green-500/10 border-green-500/30 text-green-400',
-    amber: 'bg-amber-500/10 border-amber-500/30 text-amber-400',
-    red: 'bg-red-500/10 border-red-500/30 text-red-400',
-    blue: 'bg-blue-500/10 border-blue-500/30 text-blue-400',
+type PastelColor = 'emerald' | 'amber' | 'rose' | 'sky';
+
+const Legend: React.FC<{ color: PastelColor; label: string; pulse?: boolean }> = ({ color, label, pulse }) => {
+  const map: Record<PastelColor, string> = {
+    emerald: 'bg-emerald-400/10 border-emerald-400/30 text-emerald-300',
+    amber:   'bg-amber-300/10 border-amber-300/30 text-amber-200',
+    rose:    'bg-rose-400/10 border-rose-400/30 text-rose-300',
+    sky:     'bg-sky-400/10 border-sky-400/30 text-sky-300',
   };
-  const dotMap = {
-    green: 'bg-green-500',
-    amber: 'bg-amber-500',
-    red: 'bg-red-500',
-    blue: 'bg-blue-500',
+  const dotMap: Record<PastelColor, string> = {
+    emerald: 'bg-emerald-400',
+    amber:   'bg-amber-300',
+    rose:    'bg-rose-400',
+    sky:     'bg-sky-400',
   };
   return (
     <span className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${map[color]} font-medium`}>
@@ -331,14 +320,14 @@ const StatusCount: React.FC<{
   label: string;
   count: number;
   total?: number;
-  color: 'green' | 'amber' | 'red' | 'blue';
+  color: PastelColor;
   pulse?: boolean;
 }> = ({ icon: Icon, label, count, total, color, pulse }) => {
-  const bgMap = {
-    green: 'bg-green-500/20 text-green-400',
-    amber: 'bg-amber-500/20 text-amber-400',
-    red: 'bg-red-500/20 text-red-400',
-    blue: 'bg-blue-500/20 text-blue-400',
+  const bgMap: Record<PastelColor, string> = {
+    emerald: 'bg-emerald-400/15 text-emerald-300',
+    amber:   'bg-amber-300/15 text-amber-200',
+    rose:    'bg-rose-400/15 text-rose-300',
+    sky:     'bg-sky-400/15 text-sky-300',
   };
   return (
     <div
@@ -350,7 +339,7 @@ const StatusCount: React.FC<{
         <Icon className="w-5 h-5" />
       </div>
       <div>
-        <p className="text-xl font-bold text-white leading-tight">
+        <p className="text-xl font-bold text-gray-100 leading-tight">
           {count}
           {total !== undefined && (
             <span className="text-xs text-gray-500 font-normal ml-1">/ {total}</span>
@@ -366,17 +355,17 @@ const TotalCard: React.FC<{
   label: string;
   value: number;
   unit?: string;
-  color?: 'white' | 'amber' | 'red';
+  color?: 'white' | 'amber' | 'rose';
   border?: string;
 }> = ({ label, value, unit, color = 'white', border = '' }) => {
   const colorMap = {
-    white: 'text-white',
-    amber: 'text-amber-400',
-    red: 'text-red-400',
+    white: 'text-gray-100',
+    amber: 'text-amber-200',
+    rose:  'text-rose-300',
   };
   return (
     <div className={`bg-gray-900 rounded-lg px-4 py-3 border border-gray-800 ${border ? `border-l-4 ${border}` : ''}`}>
-      <p className="text-xs text-gray-400 mb-1">{label}</p>
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
       <p className={`text-2xl font-bold ${colorMap[color]}`}>
         {value.toLocaleString()}
         {unit && <span className="text-sm text-gray-500 font-normal ml-1">{unit}</span>}

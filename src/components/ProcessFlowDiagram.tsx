@@ -107,7 +107,11 @@ const ProcessCard: React.FC<{ process: ProcessData; onSelect?: (no: number) => v
   const cfg = statusConfig[process.status];
   const StatusIcon = cfg.icon;
   const isStop = process.status === 'STOP';
+  const isRunning = process.status === 'RUN';
   const isOverloaded = process.queue >= process.queueThreshold;
+  // 가동중(RUN)이 아니면 제작중 수량/진행률은 0
+  const displayInProgress = isRunning ? process.inProgress : 0;
+  const displayProgress = isRunning ? process.jobProgress : 0;
   const cardAnimation = isStop ? 'animate-stop-pulse' : '';
   const queueBoxClass = isOverloaded
     ? 'border-amber-500/60 animate-overload-box'
@@ -149,7 +153,7 @@ const ProcessCard: React.FC<{ process: ProcessData; onSelect?: (no: number) => v
           <div className="bg-sky-400/10 border border-sky-400/20 rounded px-1 py-1 text-center">
             <p className="text-[9px] text-gray-400 leading-tight">제작중</p>
             <p className="text-[13px] font-bold text-sky-200 leading-tight mt-0.5">
-              {process.inProgress.toLocaleString()}
+              {displayInProgress.toLocaleString()}
             </p>
           </div>
           <div className="bg-emerald-400/10 border border-emerald-400/20 rounded px-1 py-1 text-center">
@@ -163,10 +167,10 @@ const ProcessCard: React.FC<{ process: ProcessData; onSelect?: (no: number) => v
         <div className="mt-auto">
           <div className="flex items-center justify-between mb-0.5">
             <span className="text-[9px] text-gray-500">현재 작업 진행률</span>
-            <span className="text-[10px] font-bold text-gray-200 tabular-nums">{process.jobProgress}%</span>
+            <span className="text-[10px] font-bold text-gray-200 tabular-nums">{displayProgress}%</span>
           </div>
           <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
-            <div className={`h-full ${cfg.bar} rounded-full transition-all`} style={{ width: `${process.jobProgress}%` }} />
+            <div className={`h-full ${cfg.bar} rounded-full transition-all`} style={{ width: `${displayProgress}%` }} />
           </div>
         </div>
       </div>
@@ -326,7 +330,11 @@ const ProcessFlowDiagram: React.FC = () => {
 
   const totals = useMemo(() => {
     let queue = 0, inProgress = 0, completed = 0;
-    processes.forEach((proc) => { queue += proc.queue; inProgress += proc.inProgress; completed += proc.completed; });
+    processes.forEach((proc) => {
+      queue += proc.queue;
+      inProgress += proc.status === 'RUN' ? proc.inProgress : 0; // 가동중만 제작중에 합산
+      completed += proc.completed;
+    });
     return { queue, inProgress, completed };
   }, []);
 

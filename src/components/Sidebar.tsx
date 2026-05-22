@@ -5,12 +5,13 @@ import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  GitBranch,
-  LayoutGrid,
-  BarChart3,
-  Pencil,
-  Pause,
-  Settings,
+  Workflow,
+  Activity,
+  Factory,
+  CalendarDays,
+  FileText,
+  SlidersHorizontal,
+  ListChecks,
   FileSpreadsheet,
 } from 'lucide-react';
 
@@ -19,28 +20,37 @@ type NavItem = {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   badge?: string;
-  count?: number;
 };
 
 const sections: { title: string; items: NavItem[] }[] = [
   {
-    title: '생산 현황',
+    title: '워크플로우',
     items: [
-      { href: '/', label: '공정 흐름도', icon: GitBranch, badge: 'LIVE' },
-      { href: '/dashboard', label: '일일 대시보드', icon: LayoutGrid, count: 19 },
-      { href: '/analytics', label: '기간별 집계', icon: BarChart3 },
+      { href: '/', label: '공정흐름도', icon: Workflow, badge: 'LIVE' },
+      { href: '/analysis', label: '정지/병목 분석', icon: Activity },
     ],
   },
   {
-    title: '데이터 입력',
-    items: [{ href: '/input', label: '일일 생산 입력', icon: Pencil }],
+    title: '생산현황집계',
+    items: [
+      { href: '/summary/equipment', label: '장비별', icon: Factory },
+      { href: '/summary/period', label: '기간별', icon: CalendarDays },
+    ],
+  },
+  {
+    title: '리포트',
+    items: [
+      { href: '/report/weekly', label: '주간', icon: FileText },
+      { href: '/report/monthly', label: '월간', icon: FileText },
+      { href: '/report/quarterly', label: '분기', icon: FileText },
+      { href: '/report/custom', label: '기간설정', icon: SlidersHorizontal },
+    ],
   },
   {
     title: '설정',
     items: [
-      { href: '/codes', label: '정지/병목 코드', icon: Pause },
-      { href: '/master', label: '공정 마스터', icon: Settings },
-      { href: '/sheets', label: 'Sheets 연결', icon: FileSpreadsheet },
+      { href: '/codes', label: '정지/병목코드', icon: ListChecks },
+      { href: '/sheets', label: '시트 연결', icon: FileSpreadsheet },
     ],
   },
 ];
@@ -64,7 +74,7 @@ const Sidebar: React.FC = () => {
   return (
     <aside className="w-56 bg-gray-950 border-r border-gray-800 h-screen sticky top-0 p-5 flex flex-col shrink-0">
       {/* 헤더 */}
-      <div className="mb-8">
+      <div className="mb-6">
         <div className="flex items-center gap-2 mb-1.5">
           <span className="relative flex w-2 h-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -78,7 +88,7 @@ const Sidebar: React.FC = () => {
       </div>
 
       {/* 메뉴 */}
-      <nav className="space-y-6 flex-1">
+      <nav className="space-y-5 flex-1 overflow-y-auto -mr-2 pr-2">
         {sections.map((section) => (
           <div key={section.title}>
             <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 px-2">
@@ -103,11 +113,6 @@ const Sidebar: React.FC = () => {
                     {item.badge && (
                       <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
                         {item.badge}
-                      </span>
-                    )}
-                    {item.count !== undefined && (
-                      <span className="text-[10px] font-bold text-gray-500">
-                        {item.count}
                       </span>
                     )}
                   </Link>

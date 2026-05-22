@@ -12,39 +12,48 @@ interface ProcessData {
   model: string;
   maker: string;
   status: Status;
-  production: number;
-  waiting: number;
-  remaining: number;
+  queue: number;          // 대기 (제작 대기 중인 물량)
+  inProgress: number;     // 제작중 (현재 작업 중인 물량)
+  completed: number;      // 제작완료 (완료된 물량)
+  jobProgress: number;    // 현재 제작중 job 진행률 (0~100)
+  queueThreshold: number; // 대기 물량 기준치 (이 값 이상이면 하이라이트)
 }
 
 // ============================================
+// 대기 물량 기준치 (예시: 전체 5,000으로 설정)
+// 추후 장비별로 다르게 지정 가능
+// ============================================
+const DEFAULT_QUEUE_THRESHOLD = 5000;
+
+// ============================================
 // 19개 공정 데이터
+//  ⚠ 일부 장비는 대기 5,000 초과로 설정 (하이라이트 시뮬레이션)
+//    → no.2 (6,240), no.4 (5,761), no.10 (5,430)
 // ============================================
 const processes: ProcessData[] = [
-  { no: 1, name: '연속지출력 1호기', model: '520HD+', maker: 'SCREEN', status: 'RUN', production: 9318, waiting: 1280, remaining: 3682 },
-  { no: 2, name: '연속지출력 2호기', model: '520HD+', maker: 'SCREEN', status: 'RUN', production: 7939, waiting: 2388, remaining: 5061 },
-  { no: 3, name: 'R2C 1호기', model: 'S2020', maker: 'TECHNAU', status: 'RUN', production: 5047, waiting: 1190, remaining: 4953 },
-  { no: 4, name: 'R2C 2호기', model: 'S2320', maker: 'TECHNAU', status: 'IDLE', production: 4239, waiting: 2071, remaining: 5761 },
-  { no: 5, name: '날장출력 1호기', model: '이리데스', maker: 'FUJI FILM', status: 'RUN', production: 2424, waiting: 488, remaining: 1076 },
-  { no: 6, name: '날장출력 2호기', model: '레보리아', maker: 'FUJI FILM', status: 'STOP', production: 714, waiting: 991, remaining: 2786 },
-  { no: 7, name: '코팅 1호기', model: 'EUROLAM 540', maker: 'GMP', status: 'RUN', production: 4402, waiting: 800, remaining: 598 },
-  { no: 8, name: '코팅 2호기', model: 'PROTOPIC 540', maker: 'GMP', status: 'SETUP', production: 2529, waiting: 726, remaining: 2471 },
-  { no: 9, name: '에폭시', model: 'DDC 810', maker: 'DUPLO', status: 'RUN', production: 1336, waiting: 361, remaining: 664 },
-  { no: 10, name: '수동재단 1호기', model: 'POLAR 92', maker: 'HEIDELBERG', status: 'RUN', production: 3373, waiting: 695, remaining: 2627 },
-  { no: 11, name: '수동재단 2호기', model: 'C860', maker: '대호', status: 'IDLE', production: 2802, waiting: 1211, remaining: 3198 },
-  { no: 12, name: '제본 1호기', model: 'BQ470/HT80', maker: 'HORIZON', status: 'RUN', production: 1500, waiting: 273, remaining: 500 },
-  { no: 13, name: '제본 2호기', model: 'BQ470/HT80', maker: 'HORIZON', status: 'RUN', production: 1288, waiting: 143, remaining: 712 },
-  { no: 14, name: '제본 3호기', model: 'BQ500/HT300', maker: 'HORIZON', status: 'STOP', production: 382, waiting: 863, remaining: 1818 },
-  { no: 15, name: '중철기', model: 'SPF-200A', maker: 'HORIZON', status: 'RUN', production: 2911, waiting: 322, remaining: 589 },
-  { no: 16, name: '날개접지기', model: 'ZK320', maker: '', status: 'SETUP', production: 1173, waiting: 568, remaining: 1327 },
-  { no: 17, name: '시험지접지기', model: 'CSMO', maker: 'HUNKELER', status: 'IDLE', production: 522, waiting: 548, remaining: 1278 },
-  { no: 18, name: '박스포장', model: '', maker: '', status: 'RUN', production: 770, waiting: 297, remaining: 730 },
-  { no: 19, name: '댐지포장', model: '', maker: '', status: 'IDLE', production: 646, waiting: 508, remaining: 854 },
+  { no: 1,  name: '연속지출력 1호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 3682, inProgress: 1280, completed: 9318, jobProgress: 65, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 2,  name: '연속지출력 2호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 6240, inProgress: 2388, completed: 7939, jobProgress: 42, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 3,  name: 'R2C 1호기',       model: 'S2020',        maker: 'TECHNAU',    status: 'RUN',   queue: 4953, inProgress: 1190, completed: 5047, jobProgress: 78, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 4,  name: 'R2C 2호기',       model: 'S2320',        maker: 'TECHNAU',    status: 'IDLE',  queue: 5761, inProgress: 2071, completed: 4239, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 5,  name: '날장출력 1호기',   model: '이리데스',      maker: 'FUJI FILM',  status: 'RUN',   queue: 1076, inProgress: 488,  completed: 2424, jobProgress: 55, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 6,  name: '날장출력 2호기',   model: '레보리아',      maker: 'FUJI FILM',  status: 'STOP',  queue: 2786, inProgress: 991,  completed: 714,  jobProgress: 30, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 7,  name: '코팅 1호기',       model: 'EUROLAM 540',  maker: 'GMP',        status: 'RUN',   queue: 598,  inProgress: 800,  completed: 4402, jobProgress: 88, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 8,  name: '코팅 2호기',       model: 'PROTOPIC 540', maker: 'GMP',        status: 'SETUP', queue: 2471, inProgress: 726,  completed: 2529, jobProgress: 15, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 9,  name: '에폭시',           model: 'DDC 810',      maker: 'DUPLO',      status: 'RUN',   queue: 664,  inProgress: 361,  completed: 1336, jobProgress: 72, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 10, name: '수동재단 1호기',   model: 'POLAR 92',     maker: 'HEIDELBERG', status: 'RUN',   queue: 5430, inProgress: 695,  completed: 3373, jobProgress: 60, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 11, name: '수동재단 2호기',   model: 'C860',         maker: '대호',        status: 'IDLE',  queue: 3198, inProgress: 1211, completed: 2802, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 12, name: '제본 1호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 500,  inProgress: 273,  completed: 1500, jobProgress: 80, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 13, name: '제본 2호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 712,  inProgress: 143,  completed: 1288, jobProgress: 90, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 14, name: '제본 3호기',       model: 'BQ500/HT300',  maker: 'HORIZON',    status: 'STOP',  queue: 1818, inProgress: 863,  completed: 382,  jobProgress: 20, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 15, name: '중철기',           model: 'SPF-200A',     maker: 'HORIZON',    status: 'RUN',   queue: 589,  inProgress: 322,  completed: 2911, jobProgress: 75, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 16, name: '날개접지기',       model: 'ZK320',        maker: '',           status: 'SETUP', queue: 1327, inProgress: 568,  completed: 1173, jobProgress: 10, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 17, name: '시험지접지기',     model: 'CSMO',         maker: 'HUNKELER',   status: 'IDLE',  queue: 1278, inProgress: 548,  completed: 522,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 18, name: '박스포장',         model: '',             maker: '',           status: 'RUN',   queue: 730,  inProgress: 297,  completed: 770,  jobProgress: 50, queueThreshold: DEFAULT_QUEUE_THRESHOLD },
+  { no: 19, name: '댐지포장',         model: '',             maker: '',           status: 'IDLE',  queue: 854,  inProgress: 508,  completed: 646,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD },
 ];
 
 // ============================================
 // 상태별 스타일 — 파스텔 톤
-// 배경은 부드러운 파스텔, 텍스트는 어두운 색으로 가독성 확보
 // ============================================
 const statusConfig: Record<Status, {
   banner: string;
@@ -65,15 +74,27 @@ const statusConfig: Record<Status, {
 const ProcessCard: React.FC<{ process: ProcessData }> = ({ process }) => {
   const cfg = statusConfig[process.status];
   const StatusIcon = cfg.icon;
-  const total = process.production + process.remaining;
-  const progress = total > 0 ? (process.production / total) * 100 : 0;
   const isStop = process.status === 'STOP';
+  const isOverloaded = process.queue >= process.queueThreshold;
+
+  // 카드 글로우: STOP 우선, 그 다음 대기 초과
+  const cardAnimation = isStop
+    ? 'animate-stop-pulse'
+    : isOverloaded
+    ? 'animate-overload-pulse'
+    : '';
+
+  // 대기 박스 색상 (초과 시 주황 강조 + 깜박임)
+  const queueBoxClass = isOverloaded
+    ? 'border-amber-500/60 animate-overload-box'
+    : 'bg-amber-300/10 border-amber-300/20';
+  const queueTextClass = isOverloaded ? 'text-amber-300' : 'text-amber-200';
 
   return (
     <div
-      className={`rounded-md overflow-hidden border ${cfg.border} bg-gray-900 flex flex-col ${
-        isStop ? 'animate-stop-pulse' : ''
-      }`}
+      className={`rounded-md overflow-hidden border ${
+        isOverloaded && !isStop ? 'border-amber-500/60' : cfg.border
+      } bg-gray-900 flex flex-col ${cardAnimation}`}
     >
       {/* 상태 배너 */}
       <div
@@ -85,7 +106,12 @@ const ProcessCard: React.FC<{ process: ProcessData }> = ({ process }) => {
           {StatusIcon && <StatusIcon className="w-3 h-3" />}
           {process.status}
         </span>
-        <span className="font-mono opacity-70">{String(process.no).padStart(2, '0')}</span>
+        <span className="flex items-center gap-1">
+          {isOverloaded && (
+            <AlertTriangle className="w-3 h-3 text-amber-700" />
+          )}
+          <span className="font-mono opacity-70">{String(process.no).padStart(2, '0')}</span>
+        </span>
       </div>
 
       {/* 카드 본문 */}
@@ -95,31 +121,43 @@ const ProcessCard: React.FC<{ process: ProcessData }> = ({ process }) => {
           {process.name}
         </h3>
 
-        {/* 3개 수치 박스 */}
-        <div className="grid grid-cols-3 gap-1 mb-1.5">
-          <div className="bg-gray-800/50 border border-gray-700/30 rounded px-1 py-1 text-center">
-            <p className="text-[9px] text-gray-500 leading-tight">생산</p>
-            <p className="text-[13px] font-bold text-gray-100 leading-tight mt-0.5">
-              {process.production.toLocaleString()}
-            </p>
-          </div>
-          <div className="bg-amber-300/10 border border-amber-300/20 rounded px-1 py-1 text-center">
+        {/* 3개 수치 박스: 대기 / 제작중 / 제작완료 */}
+        <div className="grid grid-cols-3 gap-1 mb-2">
+          {/* 대기 (초과 시 강조) */}
+          <div className={`border rounded px-1 py-1 text-center ${queueBoxClass}`}>
             <p className="text-[9px] text-gray-400 leading-tight">대기</p>
-            <p className="text-[13px] font-bold text-amber-200 leading-tight mt-0.5">
-              {process.waiting.toLocaleString()}
+            <p className={`text-[13px] font-bold leading-tight mt-0.5 ${queueTextClass}`}>
+              {process.queue.toLocaleString()}
             </p>
           </div>
-          <div className="bg-rose-300/10 border border-rose-300/20 rounded px-1 py-1 text-center">
-            <p className="text-[9px] text-gray-400 leading-tight">잔여</p>
-            <p className="text-[13px] font-bold text-rose-300 leading-tight mt-0.5">
-              {process.remaining.toLocaleString()}
+          {/* 제작중 */}
+          <div className="bg-sky-400/10 border border-sky-400/20 rounded px-1 py-1 text-center">
+            <p className="text-[9px] text-gray-400 leading-tight">제작중</p>
+            <p className="text-[13px] font-bold text-sky-200 leading-tight mt-0.5">
+              {process.inProgress.toLocaleString()}
+            </p>
+          </div>
+          {/* 제작완료 */}
+          <div className="bg-emerald-400/10 border border-emerald-400/20 rounded px-1 py-1 text-center">
+            <p className="text-[9px] text-gray-400 leading-tight">제작완료</p>
+            <p className="text-[13px] font-bold text-emerald-200 leading-tight mt-0.5">
+              {process.completed.toLocaleString()}
             </p>
           </div>
         </div>
 
-        {/* 진행률 바 */}
-        <div className="h-0.5 bg-gray-800 rounded-full overflow-hidden mt-auto">
-          <div className={`h-full ${cfg.bar} transition-all`} style={{ width: `${progress}%` }} />
+        {/* 진행률 바 (두껍게 + % 표시) — 현재 제작중 job 진행률 */}
+        <div className="mt-auto">
+          <div className="flex items-center justify-between mb-0.5">
+            <span className="text-[9px] text-gray-500">현재 작업 진행률</span>
+            <span className="text-[10px] font-bold text-gray-200 tabular-nums">{process.jobProgress}%</span>
+          </div>
+          <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+            <div
+              className={`h-full ${cfg.bar} rounded-full transition-all`}
+              style={{ width: `${process.jobProgress}%` }}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -168,14 +206,20 @@ const ProcessFlowDiagram: React.FC = () => {
     return counts;
   }, []);
 
+  // 대기 초과 장비 수
+  const overloadedCount = useMemo(
+    () => processes.filter((proc) => proc.queue >= proc.queueThreshold).length,
+    []
+  );
+
   const totals = useMemo(() => {
-    let production = 0, waiting = 0, remaining = 0;
+    let queue = 0, inProgress = 0, completed = 0;
     processes.forEach((proc) => {
-      production += proc.production;
-      waiting += proc.waiting;
-      remaining += proc.remaining;
+      queue += proc.queue;
+      inProgress += proc.inProgress;
+      completed += proc.completed;
     });
-    return { production, waiting, remaining };
+    return { queue, inProgress, completed };
   }, []);
 
   return (
@@ -186,6 +230,11 @@ const ProcessFlowDiagram: React.FC = () => {
           <h2 className="text-2xl font-bold text-gray-100">제작공정 흐름도</h2>
           <p className="text-xs text-gray-500 mt-1">
             내지 · 표지 (병렬) → 제본 → 포장 · 실시간 상태 모니터링
+            {overloadedCount > 0 && (
+              <span className="ml-2 text-amber-400 font-medium">
+                • 대기 초과 {overloadedCount}대 (기준 {DEFAULT_QUEUE_THRESHOLD.toLocaleString()})
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-1.5 text-[11px]">
@@ -281,9 +330,9 @@ const ProcessFlowDiagram: React.FC = () => {
 
       {/* 하단 합계 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <TotalCard label="전 공정 누적 생산량" value={totals.production} unit="매" color="white" />
-        <TotalCard label="총 대기 물량" value={totals.waiting} color="amber" border="border-l-amber-300/70" />
-        <TotalCard label="총 잔여 물량" value={totals.remaining} color="rose" border="border-l-rose-400/70" />
+        <TotalCard label="총 대기 물량" value={totals.queue} color="amber" border="border-l-amber-300/70" />
+        <TotalCard label="총 제작중 물량" value={totals.inProgress} color="sky" border="border-l-sky-400/70" />
+        <TotalCard label="총 제작완료" value={totals.completed} unit="매" color="emerald" border="border-l-emerald-400/70" />
       </div>
     </div>
   );
@@ -355,13 +404,15 @@ const TotalCard: React.FC<{
   label: string;
   value: number;
   unit?: string;
-  color?: 'white' | 'amber' | 'rose';
+  color?: 'white' | 'amber' | 'rose' | 'sky' | 'emerald';
   border?: string;
 }> = ({ label, value, unit, color = 'white', border = '' }) => {
   const colorMap = {
-    white: 'text-gray-100',
-    amber: 'text-amber-200',
-    rose:  'text-rose-300',
+    white:   'text-gray-100',
+    amber:   'text-amber-200',
+    rose:    'text-rose-300',
+    sky:     'text-sky-200',
+    emerald: 'text-emerald-200',
   };
   return (
     <div className={`bg-gray-900 rounded-lg px-4 py-3 border border-gray-800 ${border ? `border-l-4 ${border}` : ''}`}>

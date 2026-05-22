@@ -55,7 +55,7 @@ const statusConfig: Record<Status, {
 }> = {
   RUN:   { banner: 'bg-emerald-400', text: 'text-emerald-950', border: 'border-emerald-400/40', bar: 'bg-emerald-400', icon: null },
   IDLE:  { banner: 'bg-amber-300',   text: 'text-amber-950',   border: 'border-amber-300/45',   bar: 'bg-amber-300',   icon: null },
-  STOP:  { banner: 'bg-rose-400',    text: 'text-rose-950',    border: 'border-rose-400/50',    bar: 'bg-rose-400',    icon: AlertTriangle },
+  STOP:  { banner: 'bg-rose-500',    text: 'text-white',       border: 'border-rose-500/70',    bar: 'bg-rose-500',    icon: AlertTriangle },
   SETUP: { banner: 'bg-sky-400',     text: 'text-sky-950',     border: 'border-sky-400/40',     bar: 'bg-sky-400',     icon: null },
 };
 

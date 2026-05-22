@@ -77,12 +77,8 @@ const ProcessCard: React.FC<{ process: ProcessData }> = ({ process }) => {
   const isStop = process.status === 'STOP';
   const isOverloaded = process.queue >= process.queueThreshold;
 
-  // 카드 글로우: STOP 우선, 그 다음 대기 초과
-  const cardAnimation = isStop
-    ? 'animate-stop-pulse'
-    : isOverloaded
-    ? 'animate-overload-pulse'
-    : '';
+  // 카드 글로우: STOP만 카드 전체 깜박임 (대기 초과는 대기 박스만 깜박)
+  const cardAnimation = isStop ? 'animate-stop-pulse' : '';
 
   // 대기 박스 색상 (초과 시 주황 강조 + 깜박임)
   const queueBoxClass = isOverloaded
@@ -92,9 +88,7 @@ const ProcessCard: React.FC<{ process: ProcessData }> = ({ process }) => {
 
   return (
     <div
-      className={`rounded-md overflow-hidden border ${
-        isOverloaded && !isStop ? 'border-amber-500/60' : cfg.border
-      } bg-gray-900 flex flex-col ${cardAnimation}`}
+      className={`rounded-md overflow-hidden border ${cfg.border} bg-gray-900 flex flex-col ${cardAnimation}`}
     >
       {/* 상태 배너 */}
       <div

@@ -9,7 +9,7 @@ import {
   Play, Pause, AlertCircle, Settings, ChevronRight, RefreshCw, AlertTriangle, X,
 } from 'lucide-react';
 
-type Status = 'RUN' | 'IDLE' | 'STOP' | 'SETUP';
+type Status = 'RUN' | 'READY' | 'STOP' | 'SETUP';
 
 interface ProcessData {
   no: number;
@@ -38,22 +38,22 @@ const processes: ProcessData[] = [
   { no: 1,  name: '연속지출력 1호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 3682, inProgress: 1280, completed: 9318, jobProgress: 65, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 13814, dailyTarget: 13000, stopReason: 'E',  bottleneckReason: '' },
   { no: 2,  name: '연속지출력 2호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 6240, inProgress: 2388, completed: 7939, jobProgress: 42, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 12500, dailyTarget: 13000, stopReason: '',   bottleneckReason: 'BN2' },
   { no: 3,  name: 'R2C 1호기',       model: 'S2020',        maker: 'TECHNAU',    status: 'RUN',   queue: 5340, inProgress: 1190, completed: 5047, jobProgress: 78, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 8200,  dailyTarget: 8000,  stopReason: '',   bottleneckReason: '' },
-  { no: 4,  name: 'R2C 2호기',       model: 'S2320',        maker: 'TECHNAU',    status: 'IDLE',  queue: 0,    inProgress: 2071, completed: 4239, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 7800,  dailyTarget: 8000,  stopReason: 'S1', bottleneckReason: 'BN1' },
+  { no: 4,  name: 'R2C 2호기',       model: 'S2320',        maker: 'TECHNAU',    status: 'READY',  queue: 0,    inProgress: 2071, completed: 4239, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 7800,  dailyTarget: 8000,  stopReason: 'S1', bottleneckReason: 'BN1' },
   { no: 5,  name: '날장출력 1호기',   model: '이리데스',      maker: 'FUJI FILM',  status: 'RUN',   queue: 1076, inProgress: 488,  completed: 2424, jobProgress: 55, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 4100,  dailyTarget: 4000,  stopReason: '',   bottleneckReason: '' },
   { no: 6,  name: '날장출력 2호기',   model: '레보리아',      maker: 'FUJI FILM',  status: 'STOP',  queue: 2786, inProgress: 991,  completed: 714,  jobProgress: 30, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 2200,  dailyTarget: 4000,  stopReason: 'S1', bottleneckReason: '' },
   { no: 7,  name: '코팅 1호기',       model: 'EUROLAM 540',  maker: 'GMP',        status: 'RUN',   queue: 598,  inProgress: 800,  completed: 4402, jobProgress: 88, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 6800,  dailyTarget: 6500,  stopReason: '',   bottleneckReason: '' },
   { no: 8,  name: '코팅 2호기',       model: 'PROTOPIC 540', maker: 'GMP',        status: 'SETUP', queue: 2471, inProgress: 726,  completed: 2529, jobProgress: 15, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 3900,  dailyTarget: 5000,  stopReason: 'S6', bottleneckReason: '' },
   { no: 9,  name: '에폭시',           model: 'DDC 810',      maker: 'DUPLO',      status: 'RUN',   queue: 664,  inProgress: 361,  completed: 1336, jobProgress: 72, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 2400,  dailyTarget: 2500,  stopReason: '',   bottleneckReason: '' },
   { no: 10, name: '수동재단 1호기',   model: 'POLAR 92',     maker: 'HEIDELBERG', status: 'RUN',   queue: 5430, inProgress: 695,  completed: 3373, jobProgress: 60, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 5600,  dailyTarget: 5500,  stopReason: '',   bottleneckReason: 'BN3' },
-  { no: 11, name: '수동재단 2호기',   model: 'C860',         maker: '대호',        status: 'IDLE',  queue: 0,    inProgress: 1211, completed: 2802, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 4800,  dailyTarget: 5000,  stopReason: '',   bottleneckReason: '' },
+  { no: 11, name: '수동재단 2호기',   model: 'C860',         maker: '대호',        status: 'READY',  queue: 0,    inProgress: 1211, completed: 2802, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 4800,  dailyTarget: 5000,  stopReason: '',   bottleneckReason: '' },
   { no: 12, name: '제본 1호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 500,  inProgress: 273,  completed: 1500, jobProgress: 80, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 2700,  dailyTarget: 2800,  stopReason: '',   bottleneckReason: '' },
   { no: 13, name: '제본 2호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 712,  inProgress: 143,  completed: 1288, jobProgress: 90, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 2300,  dailyTarget: 2500,  stopReason: '',   bottleneckReason: '' },
   { no: 14, name: '제본 3호기',       model: 'BQ500/HT300',  maker: 'HORIZON',    status: 'STOP',  queue: 1818, inProgress: 863,  completed: 382,  jobProgress: 20, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 900,   dailyTarget: 2500,  stopReason: 'S1', bottleneckReason: '' },
   { no: 15, name: '중철기',           model: 'SPF-200A',     maker: 'HORIZON',    status: 'RUN',   queue: 589,  inProgress: 322,  completed: 2911, jobProgress: 75, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 4900,  dailyTarget: 5000,  stopReason: '',   bottleneckReason: '' },
   { no: 16, name: '날개접지기',       model: 'ZK320',        maker: '',           status: 'SETUP', queue: 1327, inProgress: 568,  completed: 1173, jobProgress: 10, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 2100,  dailyTarget: 3000,  stopReason: 'S6', bottleneckReason: '' },
-  { no: 17, name: '시험지접지기',     model: 'CSMO',         maker: 'HUNKELER',   status: 'IDLE',  queue: 0,    inProgress: 548,  completed: 522,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 1100,  dailyTarget: 2000,  stopReason: '',   bottleneckReason: '' },
+  { no: 17, name: '시험지접지기',     model: 'CSMO',         maker: 'HUNKELER',   status: 'READY',  queue: 0,    inProgress: 548,  completed: 522,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 1100,  dailyTarget: 2000,  stopReason: '',   bottleneckReason: '' },
   { no: 18, name: '박스포장',         model: '',             maker: '',           status: 'RUN',   queue: 730,  inProgress: 297,  completed: 770,  jobProgress: 50, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 1500,  dailyTarget: 1500,  stopReason: '',   bottleneckReason: '' },
-  { no: 19, name: '댐지포장',         model: '',             maker: '',           status: 'IDLE',  queue: 0,    inProgress: 508,  completed: 646,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 1300,  dailyTarget: 1500,  stopReason: '',   bottleneckReason: '' },
+  { no: 19, name: '댐지포장',         model: '',             maker: '',           status: 'READY',  queue: 0,    inProgress: 508,  completed: 646,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 1300,  dailyTarget: 1500,  stopReason: '',   bottleneckReason: '' },
 ];
 
 // ============================================
@@ -64,13 +64,13 @@ const statusConfig: Record<Status, {
   icon: React.ComponentType<{ className?: string }> | null;
 }> = {
   RUN:   { banner: 'bg-emerald-400', text: 'text-emerald-950', border: 'border-emerald-400/40', bar: 'bg-emerald-400', icon: null },
-  IDLE:  { banner: 'bg-amber-300',   text: 'text-amber-950',   border: 'border-amber-300/45',   bar: 'bg-amber-300',   icon: null },
+  READY:  { banner: 'bg-amber-300',   text: 'text-amber-950',   border: 'border-amber-300/45',   bar: 'bg-amber-300',   icon: null },
   STOP:  { banner: 'bg-rose-500',    text: 'text-white',       border: 'border-rose-500/70',    bar: 'bg-rose-500',    icon: AlertTriangle },
   SETUP: { banner: 'bg-sky-400',     text: 'text-sky-950',     border: 'border-sky-400/40',     bar: 'bg-sky-400',     icon: null },
 };
 
-const statusLabel: Record<Status, string> = { RUN: '가동중', IDLE: '대기중', STOP: '정지', SETUP: '셋업' };
-const statusDot: Record<Status, string> = { RUN: 'bg-emerald-400', IDLE: 'bg-amber-300', STOP: 'bg-rose-500', SETUP: 'bg-sky-400' };
+const statusLabel: Record<Status, string> = { RUN: '가동중', READY: '준비', STOP: '정지', SETUP: '셋업' };
+const statusDot: Record<Status, string> = { RUN: 'bg-emerald-400', READY: 'bg-amber-300', STOP: 'bg-rose-500', SETUP: 'bg-sky-400' };
 
 // ============================================
 // 유틸리티
@@ -108,9 +108,9 @@ const ProcessCard: React.FC<{ process: ProcessData; onSelect?: (no: number) => v
   const StatusIcon = cfg.icon;
   const isStop = process.status === 'STOP';
   const isRunning = process.status === 'RUN';
-  const isIdle = process.status === 'IDLE';
-  // IDLE이면 대기물량 0 (할 일 있으면 바로 가동해야 하므로), 제작중/진행률도 0
-  const displayQueue = isIdle ? 0 : process.queue;
+  const isReady = process.status === 'READY';
+  // READY이면 대기물량 0 (할 일 있으면 바로 가동해야 하므로), 제작중/진행률도 0
+  const displayQueue = isReady ? 0 : process.queue;
   const displayInProgress = isRunning ? process.inProgress : 0;
   const displayProgress = isRunning ? process.jobProgress : 0;
   // 대기 초과는 가동중(RUN)일 때만
@@ -322,7 +322,7 @@ const ProcessFlowDiagram: React.FC = () => {
   }, []);
 
   const statusCounts = useMemo(() => {
-    const counts = { RUN: 0, IDLE: 0, STOP: 0, SETUP: 0 };
+    const counts = { RUN: 0, READY: 0, STOP: 0, SETUP: 0 };
     processes.forEach((proc) => counts[proc.status]++);
     return counts;
   }, []);
@@ -334,7 +334,7 @@ const ProcessFlowDiagram: React.FC = () => {
   const totals = useMemo(() => {
     let queue = 0, inProgress = 0, completed = 0;
     processes.forEach((proc) => {
-      queue += proc.status === 'IDLE' ? 0 : proc.queue; // IDLE은 대기물량 0
+      queue += proc.status === 'READY' ? 0 : proc.queue; // READY은 대기물량 0
       inProgress += proc.status === 'RUN' ? proc.inProgress : 0; // 가동중만 제작중에 합산
       completed += proc.completed;
     });
@@ -365,7 +365,7 @@ const ProcessFlowDiagram: React.FC = () => {
         </div>
         <div className="flex items-center gap-1.5 text-[11px]">
           <Legend color="emerald" label="RUN" />
-          <Legend color="amber" label="IDLE" />
+          <Legend color="amber" label="READY" />
           <Legend color="rose" label="STOP" pulse />
           <Legend color="sky" label="SETUP" />
           <button className="flex items-center gap-1.5 px-2.5 py-1 ml-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition-colors text-[11px]">
@@ -378,7 +378,7 @@ const ProcessFlowDiagram: React.FC = () => {
       {/* 상태별 카운트 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatusCount icon={Play} label="가동 중" count={statusCounts.RUN} total={19} color="emerald" />
-        <StatusCount icon={Pause} label="대기 중" count={statusCounts.IDLE} color="amber" />
+        <StatusCount icon={Pause} label="준비" count={statusCounts.READY} color="amber" />
         <StatusCount icon={AlertCircle} label="정지" count={statusCounts.STOP} color="rose" pulse />
         <StatusCount icon={Settings} label="셋업" count={statusCounts.SETUP} color="sky" />
       </div>

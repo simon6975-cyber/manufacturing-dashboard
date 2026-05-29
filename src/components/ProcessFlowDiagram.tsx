@@ -1,7 +1,7 @@
 // src/components/ProcessFlowDiagram.tsx
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell,
 } from 'recharts';
@@ -17,58 +17,76 @@ interface ProcessData {
   model: string;
   maker: string;
   status: Status;
-  queue: number;
-  inProgress: number;
-  completed: number;
-  jobProgress: number;
-  queueThreshold: number;
+  queue: number;                // 대기물량
+  queueCount: number;           // 대기건수 (대기 중인 Job 수)
+  inProgress: number;           // (기존 유지 — 상세 패널/하단 합계용)
+  completed: number;            // 제작완료 (하단 합계용)
+  jobProgress: number;          // 현재 job 진행률 0~100
+  queueThreshold: number;       // 대기물량 기준치
+  initialElapsedSeconds: number; // 현재 상태 소요시간 초기값 (초)
+  stopReason: string;           // 정지 사유 코드 ('' = 없음)
   // 상세 패널용
   dailyProduction: number;
   dailyTarget: number;
-  stopReason: string;       // '' = 없음
-  bottleneckReason: string; // '' = 없음
+  bottleneckReason: string;
 }
 
 const DEFAULT_QUEUE_THRESHOLD = 5000;
 
 // ============================================
+// 정지코드 이름 매핑
+// ============================================
+const stopCodeNames: Record<string, string> = {
+  S1: '장비 셋팅',
+  S2: '자재 준비',
+  S3: '작업 준비',
+  S4: '검수',
+  S5: '예방 정비',
+  S6: '설비 장애',
+  S7: '작업 중단',
+  S8: '인력 부재',
+  S9: '기타',
+};
+
+// ============================================
 // 19개 공정 데이터
+// ⚠ 대기 초과 (RUN만): no.2(6,240) no.3(5,340) no.10(5,430)
+// 🔴 STOP: no.6(S1 설비고장), no.14(S3 품질불량)
 // ============================================
 const processes: ProcessData[] = [
-  { no: 1,  name: '연속지출력 1호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 3682, inProgress: 1280, completed: 9318, jobProgress: 65, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 13814, dailyTarget: 13000, stopReason: 'E',  bottleneckReason: '' },
-  { no: 2,  name: '연속지출력 2호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 6240, inProgress: 2388, completed: 7939, jobProgress: 42, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 12500, dailyTarget: 13000, stopReason: '',   bottleneckReason: 'BN2' },
-  { no: 3,  name: 'R2C 1호기',       model: 'S2020',        maker: 'TECHNAU',    status: 'RUN',   queue: 5340, inProgress: 1190, completed: 5047, jobProgress: 78, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 8200,  dailyTarget: 8000,  stopReason: '',   bottleneckReason: '' },
-  { no: 4,  name: 'R2C 2호기',       model: 'S2320',        maker: 'TECHNAU',    status: 'READY',  queue: 0,    inProgress: 2071, completed: 4239, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 7800,  dailyTarget: 8000,  stopReason: 'S1', bottleneckReason: 'BN1' },
-  { no: 5,  name: '날장출력 1호기',   model: '이리데스',      maker: 'FUJI FILM',  status: 'RUN',   queue: 1076, inProgress: 488,  completed: 2424, jobProgress: 55, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 4100,  dailyTarget: 4000,  stopReason: '',   bottleneckReason: '' },
-  { no: 6,  name: '날장출력 2호기',   model: '레보리아',      maker: 'FUJI FILM',  status: 'STOP',  queue: 2786, inProgress: 991,  completed: 714,  jobProgress: 30, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 2200,  dailyTarget: 4000,  stopReason: 'S1', bottleneckReason: '' },
-  { no: 7,  name: '코팅 1호기',       model: 'EUROLAM 540',  maker: 'GMP',        status: 'RUN',   queue: 598,  inProgress: 800,  completed: 4402, jobProgress: 88, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 6800,  dailyTarget: 6500,  stopReason: '',   bottleneckReason: '' },
-  { no: 8,  name: '코팅 2호기',       model: 'PROTOPIC 540', maker: 'GMP',        status: 'SETUP', queue: 2471, inProgress: 726,  completed: 2529, jobProgress: 15, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 3900,  dailyTarget: 5000,  stopReason: 'S6', bottleneckReason: '' },
-  { no: 9,  name: '에폭시',           model: 'DDC 810',      maker: 'DUPLO',      status: 'RUN',   queue: 664,  inProgress: 361,  completed: 1336, jobProgress: 72, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 2400,  dailyTarget: 2500,  stopReason: '',   bottleneckReason: '' },
-  { no: 10, name: '수동재단 1호기',   model: 'POLAR 92',     maker: 'HEIDELBERG', status: 'RUN',   queue: 5430, inProgress: 695,  completed: 3373, jobProgress: 60, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 5600,  dailyTarget: 5500,  stopReason: '',   bottleneckReason: 'BN3' },
-  { no: 11, name: '수동재단 2호기',   model: 'C860',         maker: '대호',        status: 'READY',  queue: 0,    inProgress: 1211, completed: 2802, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 4800,  dailyTarget: 5000,  stopReason: '',   bottleneckReason: '' },
-  { no: 12, name: '제본 1호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 500,  inProgress: 273,  completed: 1500, jobProgress: 80, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 2700,  dailyTarget: 2800,  stopReason: '',   bottleneckReason: '' },
-  { no: 13, name: '제본 2호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 712,  inProgress: 143,  completed: 1288, jobProgress: 90, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 2300,  dailyTarget: 2500,  stopReason: '',   bottleneckReason: '' },
-  { no: 14, name: '제본 3호기',       model: 'BQ500/HT300',  maker: 'HORIZON',    status: 'STOP',  queue: 1818, inProgress: 863,  completed: 382,  jobProgress: 20, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 900,   dailyTarget: 2500,  stopReason: 'S1', bottleneckReason: '' },
-  { no: 15, name: '중철기',           model: 'SPF-200A',     maker: 'HORIZON',    status: 'RUN',   queue: 589,  inProgress: 322,  completed: 2911, jobProgress: 75, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 4900,  dailyTarget: 5000,  stopReason: '',   bottleneckReason: '' },
-  { no: 16, name: '날개접지기',       model: 'ZK320',        maker: '',           status: 'SETUP', queue: 1327, inProgress: 568,  completed: 1173, jobProgress: 10, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 2100,  dailyTarget: 3000,  stopReason: 'S6', bottleneckReason: '' },
-  { no: 17, name: '시험지접지기',     model: 'CSMO',         maker: 'HUNKELER',   status: 'READY',  queue: 0,    inProgress: 548,  completed: 522,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 1100,  dailyTarget: 2000,  stopReason: '',   bottleneckReason: '' },
-  { no: 18, name: '박스포장',         model: '',             maker: '',           status: 'RUN',   queue: 730,  inProgress: 297,  completed: 770,  jobProgress: 50, queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 1500,  dailyTarget: 1500,  stopReason: '',   bottleneckReason: '' },
-  { no: 19, name: '댐지포장',         model: '',             maker: '',           status: 'READY',  queue: 0,    inProgress: 508,  completed: 646,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, dailyProduction: 1300,  dailyTarget: 1500,  stopReason: '',   bottleneckReason: '' },
+  { no: 1,  name: '연속지출력 1호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 3682, queueCount: 3, inProgress: 1280, completed: 9318, jobProgress: 65, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 9252,  stopReason: 'S5',  dailyProduction: 13814, dailyTarget: 13000, bottleneckReason: '' },
+  { no: 2,  name: '연속지출력 2호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 6240, queueCount: 5, inProgress: 2388, completed: 7939, jobProgress: 42, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 4530,  stopReason: '',   dailyProduction: 12500, dailyTarget: 13000, bottleneckReason: 'BN2' },
+  { no: 3,  name: 'R2C 1호기',       model: 'S2020',        maker: 'TECHNAU',    status: 'RUN',   queue: 5340, queueCount: 4, inProgress: 1190, completed: 5047, jobProgress: 78, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 13338, stopReason: '',   dailyProduction: 8200,  dailyTarget: 8000,  bottleneckReason: '' },
+  { no: 4,  name: 'R2C 2호기',       model: 'S2320',        maker: 'TECHNAU',    status: 'READY', queue: 0,    queueCount: 0, inProgress: 0,    completed: 4239, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 1425,  stopReason: 'S1', dailyProduction: 7800,  dailyTarget: 8000,  bottleneckReason: 'BN1' },
+  { no: 5,  name: '날장출력 1호기',   model: '이리데스',      maker: 'FUJI FILM',  status: 'RUN',   queue: 1076, queueCount: 2, inProgress: 488,  completed: 2424, jobProgress: 55, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 2902,  stopReason: '',   dailyProduction: 4100,  dailyTarget: 4000,  bottleneckReason: '' },
+  { no: 6,  name: '날장출력 2호기',   model: '레보리아',      maker: 'FUJI FILM',  status: 'STOP',  queue: 2786, queueCount: 3, inProgress: 0,    completed: 714,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 1091,  stopReason: 'S6', dailyProduction: 2200,  dailyTarget: 4000,  bottleneckReason: '' },
+  { no: 7,  name: '코팅 1호기',       model: 'EUROLAM 540',  maker: 'GMP',        status: 'RUN',   queue: 598,  queueCount: 1, inProgress: 800,  completed: 4402, jobProgress: 88, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 15308, stopReason: '',   dailyProduction: 6800,  dailyTarget: 6500,  bottleneckReason: '' },
+  { no: 8,  name: '코팅 2호기',       model: 'PROTOPIC 540', maker: 'GMP',        status: 'SETUP', queue: 2471, queueCount: 2, inProgress: 0,    completed: 2529, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 1975,  stopReason: 'S1', dailyProduction: 3900,  dailyTarget: 5000,  bottleneckReason: '' },
+  { no: 9,  name: '에폭시',           model: 'DDC 810',      maker: 'DUPLO',      status: 'RUN',   queue: 664,  queueCount: 1, inProgress: 361,  completed: 1336, jobProgress: 72, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 4124,  stopReason: '',   dailyProduction: 2400,  dailyTarget: 2500,  bottleneckReason: '' },
+  { no: 10, name: '수동재단 1호기',   model: 'POLAR 92',     maker: 'HEIDELBERG', status: 'RUN',   queue: 5430, queueCount: 4, inProgress: 695,  completed: 3373, jobProgress: 60, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 8493,  stopReason: '',   dailyProduction: 5600,  dailyTarget: 5500,  bottleneckReason: 'BN3' },
+  { no: 11, name: '수동재단 2호기',   model: 'C860',         maker: '대호',        status: 'READY', queue: 0,    queueCount: 0, inProgress: 0,    completed: 2802, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 687,   stopReason: '',   dailyProduction: 4800,  dailyTarget: 5000,  bottleneckReason: '' },
+  { no: 12, name: '제본 1호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 500,  queueCount: 1, inProgress: 273,  completed: 1500, jobProgress: 80, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 14102, stopReason: '',   dailyProduction: 2700,  dailyTarget: 2800,  bottleneckReason: '' },
+  { no: 13, name: '제본 2호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 712,  queueCount: 1, inProgress: 143,  completed: 1288, jobProgress: 90, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 10099, stopReason: '',   dailyProduction: 2300,  dailyTarget: 2500,  bottleneckReason: '' },
+  { no: 14, name: '제본 3호기',       model: 'BQ500/HT300',  maker: 'HORIZON',    status: 'STOP',  queue: 1818, queueCount: 2, inProgress: 0,    completed: 382,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 2558,  stopReason: 'S7', dailyProduction: 900,   dailyTarget: 2500,  bottleneckReason: '' },
+  { no: 15, name: '중철기',           model: 'SPF-200A',     maker: 'HORIZON',    status: 'RUN',   queue: 589,  queueCount: 1, inProgress: 322,  completed: 2911, jobProgress: 75, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 5631,  stopReason: '',   dailyProduction: 4900,  dailyTarget: 5000,  bottleneckReason: '' },
+  { no: 16, name: '날개접지기',       model: 'ZK320',        maker: '',           status: 'SETUP', queue: 1327, queueCount: 2, inProgress: 0,    completed: 1173, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 3074,  stopReason: 'S1', dailyProduction: 2100,  dailyTarget: 3000,  bottleneckReason: '' },
+  { no: 17, name: '시험지접지기',     model: 'CSMO',         maker: 'HUNKELER',   status: 'READY', queue: 0,    queueCount: 0, inProgress: 0,    completed: 522,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 308,   stopReason: '',   dailyProduction: 1100,  dailyTarget: 2000,  bottleneckReason: '' },
+  { no: 18, name: '박스포장',         model: '',             maker: '',           status: 'RUN',   queue: 730,  queueCount: 1, inProgress: 297,  completed: 770,  jobProgress: 50, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 7786,  stopReason: '',   dailyProduction: 1500,  dailyTarget: 1500,  bottleneckReason: '' },
+  { no: 19, name: '댐지포장',         model: '',             maker: '',           status: 'READY', queue: 0,    queueCount: 0, inProgress: 0,    completed: 646,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 862,   stopReason: '',   dailyProduction: 1300,  dailyTarget: 1500,  bottleneckReason: '' },
 ];
 
 // ============================================
-// 상태별 스타일 — 파스텔 톤
+// 상태별 스타일
 // ============================================
 const statusConfig: Record<Status, {
   banner: string; text: string; border: string; bar: string;
   icon: React.ComponentType<{ className?: string }> | null;
 }> = {
   RUN:   { banner: 'bg-emerald-400', text: 'text-emerald-950', border: 'border-emerald-400/40', bar: 'bg-emerald-400', icon: null },
-  READY:  { banner: 'bg-amber-300',   text: 'text-amber-950',   border: 'border-amber-300/45',   bar: 'bg-amber-300',   icon: null },
+  READY: { banner: 'bg-amber-300',   text: 'text-amber-950',   border: 'border-amber-300/45',   bar: 'bg-amber-300',   icon: null },
   STOP:  { banner: 'bg-rose-500',    text: 'text-white',       border: 'border-rose-500/70',    bar: 'bg-rose-500',    icon: AlertTriangle },
   SETUP: { banner: 'bg-sky-400',     text: 'text-sky-950',     border: 'border-sky-400/40',     bar: 'bg-sky-400',     icon: null },
 };
-
 const statusLabel: Record<Status, string> = { RUN: '가동중', READY: '준비', STOP: '정지', SETUP: '셋업' };
 const statusDot: Record<Status, string> = { RUN: 'bg-emerald-400', READY: 'bg-amber-300', STOP: 'bg-rose-500', SETUP: 'bg-sky-400' };
 
@@ -80,6 +98,13 @@ function getCategory(no: number): string {
   if (no <= 11) return '표지';
   if (no <= 17) return '제본';
   return '포장';
+}
+
+function formatElapsed(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 const DAY_LABELS = ['화', '수', '목', '금', '토', '일', '월'];
@@ -101,72 +126,100 @@ function getAchievementRate(monthly: number, dailyTarget: number): number {
 }
 
 // ============================================
-// 개별 공정 카드 (클릭 가능)
+// 개별 공정 카드
 // ============================================
-const ProcessCard: React.FC<{ process: ProcessData; onSelect?: (no: number) => void }> = ({ process, onSelect }) => {
+const ProcessCard: React.FC<{
+  process: ProcessData;
+  onSelect?: (no: number) => void;
+  now: number;
+  mountTime: number;
+}> = ({ process, onSelect, now, mountTime }) => {
   const cfg = statusConfig[process.status];
   const StatusIcon = cfg.icon;
   const isStop = process.status === 'STOP';
   const isRunning = process.status === 'RUN';
   const isReady = process.status === 'READY';
-  // READY이면 대기물량 0 (할 일 있으면 바로 가동해야 하므로), 제작중/진행률도 0
+
+  // READY이면 대기물량/대기건수 0
   const displayQueue = isReady ? 0 : process.queue;
-  const displayInProgress = isRunning ? process.inProgress : 0;
+  const displayQueueCount = isReady ? 0 : process.queueCount;
   const displayProgress = isRunning ? process.jobProgress : 0;
+
   // 대기 초과는 가동중(RUN)일 때만
   const isOverloaded = isRunning && displayQueue >= process.queueThreshold;
   const cardAnimation = isStop ? 'animate-stop-pulse' : '';
+
+  // 대기물량 박스 스타일
   const queueBoxClass = isOverloaded
     ? 'border-amber-500/60 animate-overload-box'
     : 'bg-amber-300/10 border-amber-300/20';
   const queueTextClass = isOverloaded ? 'text-amber-300' : 'text-amber-200';
+
+  // 소요시간 (실시간)
+  const elapsedSeconds = process.initialElapsedSeconds + Math.floor((now - mountTime) / 1000);
 
   return (
     <div
       onClick={() => onSelect?.(process.no)}
       className={`rounded-md overflow-hidden border ${cfg.border} bg-gray-900 flex flex-col cursor-pointer hover:brightness-110 hover:ring-1 hover:ring-white/20 transition ${cardAnimation}`}
     >
+      {/* 상태 배너 */}
       <div
         className={`${cfg.banner} ${cfg.text} px-2.5 py-1 flex items-center justify-between text-[11px] font-bold ${
           isStop ? 'animate-stop-banner' : ''
         }`}
       >
-        <span className="flex items-center gap-1 tracking-wide">
-          {StatusIcon && <StatusIcon className="w-3 h-3" />}
-          {process.status}
+        <span className="flex items-center gap-1 tracking-wide min-w-0 truncate">
+          {StatusIcon && <StatusIcon className="w-3 h-3 shrink-0" />}
+          <span>{process.status}</span>
+          {/* STOP 배너에 정지코드 + 내역 표시 */}
+          {isStop && process.stopReason && (
+            <>
+              <span className="opacity-50">·</span>
+              <span className="font-semibold opacity-90 truncate">
+                {process.stopReason} {stopCodeNames[process.stopReason] || ''}
+              </span>
+            </>
+          )}
         </span>
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-1 shrink-0 ml-1">
           {isOverloaded && <AlertTriangle className="w-3 h-3 text-amber-700" />}
           <span className="font-mono opacity-70">{String(process.no).padStart(2, '0')}</span>
         </span>
       </div>
 
+      {/* 카드 본문 */}
       <div className="p-2.5 flex-1 flex flex-col">
         <h3 className="text-gray-100 text-[13px] font-semibold mb-2 truncate" title={process.name}>
           {process.name}
         </h3>
 
+        {/* 3개 수치 박스: 대기물량 / 대기건수 / 소요시간 */}
         <div className="grid grid-cols-3 gap-1 mb-2">
+          {/* 대기물량 */}
           <div className={`border rounded px-1 py-1 text-center ${queueBoxClass}`}>
-            <p className="text-[9px] text-gray-400 leading-tight">대기</p>
+            <p className="text-[9px] text-gray-400 leading-tight">대기물량</p>
             <p className={`text-[13px] font-bold leading-tight mt-0.5 ${queueTextClass}`}>
               {displayQueue.toLocaleString()}
             </p>
           </div>
+          {/* 대기건수 */}
           <div className="bg-sky-400/10 border border-sky-400/20 rounded px-1 py-1 text-center">
-            <p className="text-[9px] text-gray-400 leading-tight">제작중</p>
+            <p className="text-[9px] text-gray-400 leading-tight">대기건수</p>
             <p className="text-[13px] font-bold text-sky-200 leading-tight mt-0.5">
-              {displayInProgress.toLocaleString()}
+              {displayQueueCount}
             </p>
           </div>
+          {/* 소요시간 (실시간 타임워치) */}
           <div className="bg-emerald-400/10 border border-emerald-400/20 rounded px-1 py-1 text-center">
-            <p className="text-[9px] text-gray-400 leading-tight">제작완료</p>
-            <p className="text-[13px] font-bold text-emerald-200 leading-tight mt-0.5">
-              {process.completed.toLocaleString()}
+            <p className="text-[9px] text-gray-400 leading-tight">소요시간</p>
+            <p className="text-[12px] font-bold text-emerald-200 leading-tight mt-0.5 font-mono tabular-nums">
+              {formatElapsed(elapsedSeconds)}
             </p>
           </div>
         </div>
 
+        {/* 진행률 바 */}
         <div className="mt-auto">
           <div className="flex items-center justify-between mb-0.5">
             <span className="text-[9px] text-gray-500">현재 작업 진행률</span>
@@ -182,7 +235,7 @@ const ProcessCard: React.FC<{ process: ProcessData; onSelect?: (no: number) => v
 };
 
 // ============================================
-// 상세 패널 (우측 슬라이드)
+// 상세 패널
 // ============================================
 const InfoRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="flex items-center justify-between py-3.5">
@@ -201,7 +254,6 @@ const DetailPanel: React.FC<{ process: ProcessData; onClose: () => void }> = ({ 
     <>
       <div className="fixed inset-0 bg-black/60 z-40" onClick={onClose} />
       <div className="fixed top-0 right-0 h-full w-full max-w-md bg-gray-950 border-l border-gray-800 z-50 overflow-y-auto shadow-2xl">
-        {/* 헤더 */}
         <div className="p-5 border-b border-gray-800 sticky top-0 bg-gray-950 z-10">
           <div className="flex items-start justify-between">
             <div>
@@ -216,7 +268,6 @@ const DetailPanel: React.FC<{ process: ProcessData; onClose: () => void }> = ({ 
           </div>
         </div>
 
-        {/* 정보 행 */}
         <div className="px-5 divide-y divide-gray-800/60">
           <InfoRow label="금일 생산량">
             <span className="text-xl font-bold text-white">{process.dailyProduction.toLocaleString()}</span>
@@ -232,8 +283,11 @@ const DetailPanel: React.FC<{ process: ProcessData; onClose: () => void }> = ({ 
           </InfoRow>
           <InfoRow label="금일 정지 사유">
             {process.stopReason ? (
-              <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-xs font-medium border border-indigo-500/30">
-                {process.stopReason}
+              <span className="flex items-center gap-1.5">
+                <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-xs font-medium border border-indigo-500/30">
+                  {process.stopReason}
+                </span>
+                <span className="text-xs text-gray-400">{stopCodeNames[process.stopReason] || ''}</span>
               </span>
             ) : (
               <span className="text-gray-500">없음</span>
@@ -250,7 +304,6 @@ const DetailPanel: React.FC<{ process: ProcessData; onClose: () => void }> = ({ 
           </InfoRow>
         </div>
 
-        {/* 최근 7일 생산량 차트 */}
         <div className="px-5 pt-5 pb-2">
           <h3 className="text-sm font-bold text-gray-200 mb-3">최근 7일 생산량</h3>
           <ResponsiveContainer width="100%" height={210}>
@@ -271,7 +324,6 @@ const DetailPanel: React.FC<{ process: ProcessData; onClose: () => void }> = ({ 
           </ResponsiveContainer>
         </div>
 
-        {/* 하단 카드 */}
         <div className="px-5 pb-6 pt-2 grid grid-cols-2 gap-3">
           <div className="bg-gray-900 rounded-lg p-4 border border-gray-800">
             <p className="text-xs text-gray-500 mb-1">최근 30일 누적</p>
@@ -315,6 +367,15 @@ const GroupBox: React.FC<{ title: string; titleColor?: string; children: React.R
 const ProcessFlowDiagram: React.FC = () => {
   const [selectedNo, setSelectedNo] = useState<number | null>(null);
 
+  // 실시간 타이머
+  const [now, setNow] = useState(Date.now());
+  const mountTimeRef = useRef(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const p = useMemo(() => {
     const map: Record<number, ProcessData> = {};
     processes.forEach((proc) => { map[proc.no] = proc; });
@@ -332,13 +393,14 @@ const ProcessFlowDiagram: React.FC = () => {
   );
 
   const totals = useMemo(() => {
-    let queue = 0, inProgress = 0, completed = 0;
+    let queue = 0, queueCount = 0, completed = 0;
     processes.forEach((proc) => {
-      queue += proc.status === 'READY' ? 0 : proc.queue; // READY은 대기물량 0
-      inProgress += proc.status === 'RUN' ? proc.inProgress : 0; // 가동중만 제작중에 합산
+      const isReady = proc.status === 'READY';
+      queue += isReady ? 0 : proc.queue;
+      queueCount += isReady ? 0 : proc.queueCount;
       completed += proc.completed;
     });
-    return { queue, inProgress, completed };
+    return { queue, queueCount, completed };
   }, []);
 
   // ESC로 패널 닫기
@@ -347,6 +409,8 @@ const ProcessFlowDiagram: React.FC = () => {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, []);
+
+  const cardProps = { onSelect: setSelectedNo, now, mountTime: mountTimeRef.current };
 
   return (
     <div className="flex flex-col gap-4 p-5 bg-black min-h-full">
@@ -389,29 +453,27 @@ const ProcessFlowDiagram: React.FC = () => {
         <div className="flex flex-col gap-3 min-w-0">
           <GroupBox title="내지" titleColor="text-sky-300">
             <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
-              <ProcessCard process={p[1]} onSelect={setSelectedNo} />
+              <ProcessCard process={p[1]} {...cardProps} />
               <Arrow />
-              <ProcessCard process={p[3]} onSelect={setSelectedNo} />
-              <ProcessCard process={p[2]} onSelect={setSelectedNo} />
+              <ProcessCard process={p[3]} {...cardProps} />
+              <ProcessCard process={p[2]} {...cardProps} />
               <Arrow />
-              <ProcessCard process={p[4]} onSelect={setSelectedNo} />
+              <ProcessCard process={p[4]} {...cardProps} />
             </div>
           </GroupBox>
 
           <GroupBox title="표지" titleColor="text-pink-300">
             <div className="grid gap-2 items-center" style={{ gridTemplateColumns: '1fr auto 1fr minmax(0,0.85fr) 1fr', gridTemplateRows: 'auto auto' }}>
-              <div style={{ gridColumn: '1', gridRow: '1' }}><ProcessCard process={p[5]} onSelect={setSelectedNo} /></div>
+              <div style={{ gridColumn: '1', gridRow: '1' }}><ProcessCard process={p[5]} {...cardProps} /></div>
               <div style={{ gridColumn: '2', gridRow: '1' }} className="flex items-center"><Arrow /></div>
-              <div style={{ gridColumn: '3', gridRow: '1' }}><ProcessCard process={p[7]} onSelect={setSelectedNo} /></div>
-              <div style={{ gridColumn: '5', gridRow: '1' }}><ProcessCard process={p[10]} onSelect={setSelectedNo} /></div>
-
-              <div style={{ gridColumn: '1', gridRow: '2' }}><ProcessCard process={p[6]} onSelect={setSelectedNo} /></div>
+              <div style={{ gridColumn: '3', gridRow: '1' }}><ProcessCard process={p[7]} {...cardProps} /></div>
+              <div style={{ gridColumn: '5', gridRow: '1' }}><ProcessCard process={p[10]} {...cardProps} /></div>
+              <div style={{ gridColumn: '1', gridRow: '2' }}><ProcessCard process={p[6]} {...cardProps} /></div>
               <div style={{ gridColumn: '2', gridRow: '2' }} className="flex items-center"><Arrow /></div>
-              <div style={{ gridColumn: '3', gridRow: '2' }}><ProcessCard process={p[8]} onSelect={setSelectedNo} /></div>
-              <div style={{ gridColumn: '5', gridRow: '2' }}><ProcessCard process={p[11]} onSelect={setSelectedNo} /></div>
-
+              <div style={{ gridColumn: '3', gridRow: '2' }}><ProcessCard process={p[8]} {...cardProps} /></div>
+              <div style={{ gridColumn: '5', gridRow: '2' }}><ProcessCard process={p[11]} {...cardProps} /></div>
               <div style={{ gridColumn: '4', gridRow: '1 / span 2' }} className="flex items-center">
-                <ProcessCard process={p[9]} onSelect={setSelectedNo} />
+                <ProcessCard process={p[9]} {...cardProps} />
               </div>
             </div>
           </GroupBox>
@@ -424,7 +486,7 @@ const ProcessFlowDiagram: React.FC = () => {
           <GroupBox title="제본" titleColor="text-sky-300" className="h-full">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-2 h-full">
               {[12, 13, 14, 15, 16, 17].map((n) => (
-                <ProcessCard key={n} process={p[n]} onSelect={setSelectedNo} />
+                <ProcessCard key={n} process={p[n]} {...cardProps} />
               ))}
             </div>
           </GroupBox>
@@ -436,8 +498,8 @@ const ProcessFlowDiagram: React.FC = () => {
         <div className="min-w-0">
           <GroupBox title="포장" titleColor="text-cyan-300" className="h-full">
             <div className="grid grid-cols-1 gap-2 h-full">
-              <ProcessCard process={p[18]} onSelect={setSelectedNo} />
-              <ProcessCard process={p[19]} onSelect={setSelectedNo} />
+              <ProcessCard process={p[18]} {...cardProps} />
+              <ProcessCard process={p[19]} {...cardProps} />
             </div>
           </GroupBox>
         </div>
@@ -446,8 +508,8 @@ const ProcessFlowDiagram: React.FC = () => {
       {/* 하단 합계 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <TotalCard label="총 대기 물량" value={totals.queue} color="amber" border="border-l-amber-300/70" />
-        <TotalCard label="총 제작중 물량" value={totals.inProgress} color="sky" border="border-l-sky-400/70" />
-        <TotalCard label="총 제작완료" value={totals.completed} unit="매" color="emerald" border="border-l-emerald-400/70" />
+        <TotalCard label="총 대기 건수" value={totals.queueCount} unit="건" color="sky" border="border-l-sky-400/70" />
+        <TotalCard label="전 공정 누적 제작완료" value={totals.completed} unit="매" color="emerald" border="border-l-emerald-400/70" />
       </div>
 
       {/* 상세 패널 */}

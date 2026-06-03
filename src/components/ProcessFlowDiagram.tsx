@@ -198,9 +198,9 @@ const ProcessCard: React.FC<{
 
         {/* 진행률 바 + 소요시간 */}
         <div className="mt-auto">
-          <div className="flex items-center justify-between mb-0.5">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-2 mb-0.5">
             <span className="text-[9px] text-gray-500">진행률 / 소요시간</span>
-            <span className="text-[10px] font-bold text-gray-200 font-mono tabular-nums">
+            <span className="text-[10px] font-bold text-gray-200 font-mono tabular-nums ml-auto">
               {displayProgress}%&nbsp; {formatElapsed(elapsedSeconds)}
             </span>
           </div>

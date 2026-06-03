@@ -18,14 +18,13 @@ interface ProcessData {
   maker: string;
   status: Status;
   queue: number;                // 대기물량
-  queueCount: number;           // 대기건수 (대기 중인 Job 수)
-  inProgress: number;           // (기존 유지 — 상세 패널/하단 합계용)
-  completed: number;            // 제작완료 (하단 합계용)
-  jobProgress: number;          // 현재 job 진행률 0~100
-  queueThreshold: number;       // 대기물량 기준치
-  initialElapsedSeconds: number; // 현재 상태 소요시간 초기값 (초)
-  stopReason: string;           // 정지 사유 코드 ('' = 없음)
-  // 상세 패널용
+  queueCount: number;           // 대기건수
+  inProgress: number;
+  completed: number;
+  jobProgress: number;
+  queueThreshold: number;
+  initialElapsedSeconds: number;
+  stopReason: string;
   dailyProduction: number;
   dailyTarget: number;
   bottleneckReason: string;
@@ -33,9 +32,6 @@ interface ProcessData {
 
 const DEFAULT_QUEUE_THRESHOLD = 5000;
 
-// ============================================
-// 정지코드 이름 매핑
-// ============================================
 const stopCodeNames: Record<string, string> = {
   S1: '장비 셋팅',
   S2: '자재 준비',
@@ -50,11 +46,9 @@ const stopCodeNames: Record<string, string> = {
 
 // ============================================
 // 19개 공정 데이터
-// ⚠ 대기 초과 (RUN만): no.2(6,240) no.3(5,340) no.10(5,430)
-// 🔴 STOP: no.6(S1 설비고장), no.14(S3 품질불량)
 // ============================================
 const processes: ProcessData[] = [
-  { no: 1,  name: '연속지출력 1호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 3682, queueCount: 3, inProgress: 1280, completed: 9318, jobProgress: 65, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 9252,  stopReason: 'S5',  dailyProduction: 13814, dailyTarget: 13000, bottleneckReason: '' },
+  { no: 1,  name: '연속지출력 1호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 3682, queueCount: 3, inProgress: 1280, completed: 9318, jobProgress: 65, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 9252,  stopReason: 'S5', dailyProduction: 13814, dailyTarget: 13000, bottleneckReason: '' },
   { no: 2,  name: '연속지출력 2호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 6240, queueCount: 5, inProgress: 2388, completed: 7939, jobProgress: 42, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 4530,  stopReason: '',   dailyProduction: 12500, dailyTarget: 13000, bottleneckReason: 'BN2' },
   { no: 3,  name: 'R2C 1호기',       model: 'S2020',        maker: 'TECHNAU',    status: 'RUN',   queue: 5340, queueCount: 4, inProgress: 1190, completed: 5047, jobProgress: 78, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 13338, stopReason: '',   dailyProduction: 8200,  dailyTarget: 8000,  bottleneckReason: '' },
   { no: 4,  name: 'R2C 2호기',       model: 'S2320',        maker: 'TECHNAU',    status: 'READY', queue: 0,    queueCount: 0, inProgress: 0,    completed: 4239, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 1425,  stopReason: 'S1', dailyProduction: 7800,  dailyTarget: 8000,  bottleneckReason: 'BN1' },
@@ -111,9 +105,7 @@ const DAY_LABELS = ['화', '수', '목', '금', '토', '일', '월'];
 function getLast7Days(base: number, seed: number) {
   return DAY_LABELS.map((day, i) => {
     const isWeekend = i === 4 || i === 5;
-    const factor = isWeekend
-      ? 0.28 + ((seed + i) % 8) / 100
-      : 0.9 + ((seed * 3 + i * 17) % 18) / 100;
+    const factor = isWeekend ? 0.28 + ((seed + i) % 8) / 100 : 0.9 + ((seed * 3 + i * 17) % 18) / 100;
     return { day, value: Math.round(base * factor) };
   });
 }
@@ -140,22 +132,17 @@ const ProcessCard: React.FC<{
   const isRunning = process.status === 'RUN';
   const isReady = process.status === 'READY';
 
-  // READY이면 대기물량/대기건수 0
   const displayQueue = isReady ? 0 : process.queue;
   const displayQueueCount = isReady ? 0 : process.queueCount;
   const displayProgress = isRunning ? process.jobProgress : 0;
-
-  // 대기 초과는 가동중(RUN)일 때만
   const isOverloaded = isRunning && displayQueue >= process.queueThreshold;
   const cardAnimation = isStop ? 'animate-stop-pulse' : '';
 
-  // 대기물량 박스 스타일
   const queueBoxClass = isOverloaded
     ? 'border-amber-500/60 animate-overload-box'
     : 'bg-amber-300/10 border-amber-300/20';
   const queueTextClass = isOverloaded ? 'text-amber-300' : 'text-amber-200';
 
-  // 소요시간 (실시간)
   const elapsedSeconds = process.initialElapsedSeconds + Math.floor((now - mountTime) / 1000);
 
   return (
@@ -172,7 +159,6 @@ const ProcessCard: React.FC<{
         <span className="flex items-center gap-1 tracking-wide min-w-0 truncate">
           {StatusIcon && <StatusIcon className="w-3 h-3 shrink-0" />}
           <span>{process.status}</span>
-          {/* STOP 배너에 정지코드 + 내역 표시 */}
           {isStop && process.stopReason && (
             <>
               <span className="opacity-50">·</span>
@@ -194,36 +180,29 @@ const ProcessCard: React.FC<{
           {process.name}
         </h3>
 
-        {/* 3개 수치 박스: 대기물량 / 대기건수 / 소요시간 */}
-        <div className="grid grid-cols-3 gap-1 mb-2">
-          {/* 대기물량 */}
-          <div className={`border rounded px-1 py-1 text-center ${queueBoxClass}`}>
+        {/* 2개 수치 박스: 대기물량 / 대기건수 */}
+        <div className="grid grid-cols-2 gap-1 mb-2">
+          <div className={`border rounded px-1.5 py-1.5 text-center ${queueBoxClass}`}>
             <p className="text-[9px] text-gray-400 leading-tight">대기물량</p>
-            <p className={`text-[13px] font-bold leading-tight mt-0.5 ${queueTextClass}`}>
+            <p className={`text-[14px] font-bold leading-tight mt-0.5 ${queueTextClass}`}>
               {displayQueue.toLocaleString()}
             </p>
           </div>
-          {/* 대기건수 */}
-          <div className="bg-sky-400/10 border border-sky-400/20 rounded px-1 py-1 text-center">
+          <div className="bg-sky-400/10 border border-sky-400/20 rounded px-1.5 py-1.5 text-center">
             <p className="text-[9px] text-gray-400 leading-tight">대기건수</p>
-            <p className="text-[13px] font-bold text-sky-200 leading-tight mt-0.5">
+            <p className="text-[14px] font-bold text-sky-200 leading-tight mt-0.5">
               {displayQueueCount}
-            </p>
-          </div>
-          {/* 소요시간 (실시간 타임워치) */}
-          <div className="bg-emerald-400/10 border border-emerald-400/20 rounded px-1 py-1 text-center">
-            <p className="text-[9px] text-gray-400 leading-tight">소요시간</p>
-            <p className="text-[12px] font-bold text-emerald-200 leading-tight mt-0.5 font-mono tabular-nums">
-              {formatElapsed(elapsedSeconds)}
             </p>
           </div>
         </div>
 
-        {/* 진행률 바 */}
+        {/* 진행률 바 + 소요시간 */}
         <div className="mt-auto">
           <div className="flex items-center justify-between mb-0.5">
-            <span className="text-[9px] text-gray-500">현재 작업 진행률</span>
-            <span className="text-[10px] font-bold text-gray-200 tabular-nums">{displayProgress}%</span>
+            <span className="text-[9px] text-gray-500">진행률 / 소요시간</span>
+            <span className="text-[10px] font-bold text-gray-200 font-mono tabular-nums">
+              {displayProgress}%&nbsp; {formatElapsed(elapsedSeconds)}
+            </span>
           </div>
           <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
             <div className={`h-full ${cfg.bar} rounded-full transition-all`} style={{ width: `${displayProgress}%` }} />
@@ -366,8 +345,6 @@ const GroupBox: React.FC<{ title: string; titleColor?: string; children: React.R
 // ============================================
 const ProcessFlowDiagram: React.FC = () => {
   const [selectedNo, setSelectedNo] = useState<number | null>(null);
-
-  // 실시간 타이머
   const [now, setNow] = useState(Date.now());
   const mountTimeRef = useRef(Date.now());
 
@@ -403,7 +380,6 @@ const ProcessFlowDiagram: React.FC = () => {
     return { queue, queueCount, completed };
   }, []);
 
-  // ESC로 패널 닫기
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedNo(null); };
     window.addEventListener('keydown', handler);
@@ -414,7 +390,6 @@ const ProcessFlowDiagram: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-4 p-5 bg-black min-h-full">
-      {/* 헤더 */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-100">제작공정 흐름도</h2>
@@ -439,7 +414,6 @@ const ProcessFlowDiagram: React.FC = () => {
         </div>
       </div>
 
-      {/* 상태별 카운트 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatusCount icon={Play} label="가동 중" count={statusCounts.RUN} total={19} color="emerald" />
         <StatusCount icon={Pause} label="준비" count={statusCounts.READY} color="amber" />
@@ -447,9 +421,7 @@ const ProcessFlowDiagram: React.FC = () => {
         <StatusCount icon={Settings} label="셋업" count={statusCounts.SETUP} color="sky" />
       </div>
 
-      {/* 메인 흐름도 */}
       <div className="flex-1 grid grid-cols-1 xl:grid-cols-[1fr_auto_minmax(0,0.55fr)_auto_minmax(0,0.18fr)] gap-3 items-stretch">
-        {/* 좌측: 내지 + 표지 */}
         <div className="flex flex-col gap-3 min-w-0">
           <GroupBox title="내지" titleColor="text-sky-300">
             <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-center">
@@ -481,7 +453,6 @@ const ProcessFlowDiagram: React.FC = () => {
 
         <div className="hidden xl:flex items-center justify-center"><Arrow size="lg" /></div>
 
-        {/* 중앙: 제본 */}
         <div className="min-w-0">
           <GroupBox title="제본" titleColor="text-sky-300" className="h-full">
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-2 h-full">
@@ -494,7 +465,6 @@ const ProcessFlowDiagram: React.FC = () => {
 
         <div className="hidden xl:flex items-center justify-center"><Arrow size="lg" /></div>
 
-        {/* 우측: 포장 */}
         <div className="min-w-0">
           <GroupBox title="포장" titleColor="text-cyan-300" className="h-full">
             <div className="grid grid-cols-1 gap-2 h-full">
@@ -505,14 +475,12 @@ const ProcessFlowDiagram: React.FC = () => {
         </div>
       </div>
 
-      {/* 하단 합계 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <TotalCard label="총 대기 물량" value={totals.queue} color="amber" border="border-l-amber-300/70" />
         <TotalCard label="총 대기 건수" value={totals.queueCount} unit="건" color="sky" border="border-l-sky-400/70" />
         <TotalCard label="전 공정 누적 제작완료" value={totals.completed} unit="매" color="emerald" border="border-l-emerald-400/70" />
       </div>
 
-      {/* 상세 패널 */}
       {selectedNo !== null && p[selectedNo] && (
         <DetailPanel process={p[selectedNo]} onClose={() => setSelectedNo(null)} />
       )}

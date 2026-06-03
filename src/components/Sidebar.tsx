@@ -9,11 +9,15 @@ import {
   Activity,
   Factory,
   CalendarDays,
+  Building2,
+  Package,
   FileText,
   SlidersHorizontal,
   ListChecks,
   FileSpreadsheet,
 } from 'lucide-react';
+
+const APP_VERSION = 'v1.0';
 
 type NavItem = {
   href: string;
@@ -35,6 +39,8 @@ const sections: { title: string; items: NavItem[] }[] = [
     items: [
       { href: '/summary/equipment', label: '장비별', icon: Factory },
       { href: '/summary/period', label: '기간별', icon: CalendarDays },
+      { href: '/summary/department', label: '부서별', icon: Building2 },
+      { href: '/summary/product', label: '제품별', icon: Package },
     ],
   },
   {
@@ -58,7 +64,6 @@ const sections: { title: string; items: NavItem[] }[] = [
 const Sidebar: React.FC = () => {
   const pathname = usePathname();
 
-  // 오늘 날짜
   const today = new Date();
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -66,7 +71,6 @@ const Sidebar: React.FC = () => {
   const dayLabels = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
   const dayStr = dayLabels[today.getDay()];
 
-  // 현재 시각
   const hh = String(today.getHours()).padStart(2, '0');
   const min = String(today.getMinutes()).padStart(2, '0');
   const ampm = today.getHours() < 12 ? '오전' : '오후';
@@ -75,14 +79,17 @@ const Sidebar: React.FC = () => {
     <aside className="w-56 bg-gray-950 border-r border-gray-800 h-screen sticky top-0 p-5 flex flex-col shrink-0">
       {/* 헤더 */}
       <div className="mb-6">
-        <div className="flex items-center gap-2 mb-1.5">
+        <div className="flex items-center gap-2 mb-1">
           <span className="relative flex w-2 h-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
             <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
           </span>
           <h1 className="text-white font-bold text-base">Production Hub</h1>
         </div>
-        <p className="text-[11px] text-gray-500 tracking-wider font-mono">
+        <div className="flex items-center gap-2 px-4">
+          <span className="text-[10px] text-gray-600 font-mono">{APP_VERSION}</span>
+        </div>
+        <p className="text-[11px] text-gray-500 tracking-wider font-mono mt-1">
           {yyyy}.{mm}.{dd} · {dayStr}
         </p>
       </div>
@@ -123,7 +130,7 @@ const Sidebar: React.FC = () => {
         ))}
       </nav>
 
-      {/* 하단 동기화 상태 */}
+      {/* 하단 */}
       <div className="text-[10px] text-gray-600 mt-auto pt-4 border-t border-gray-800">
         동기화: {ampm} {hh}:{min}
       </div>

@@ -1,77 +1,80 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
-
-/* Scrollbar */
-.scroll-dark::-webkit-scrollbar { width: 4px; height: 4px; }
-.scroll-dark::-webkit-scrollbar-track { background: transparent; }
-.scroll-dark::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
-.scroll-dark::-webkit-scrollbar-thumb:hover { background: #555; }
-
-/* Transaction table */
-.tx-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
-.tx-table thead th {
-  position: sticky; top: 0; z-index: 10; background: #0d0d12;
-  padding: 10px 14px; font-size: 10px; font-weight: 700; color: #6b7280;
-  text-transform: uppercase; letter-spacing: 0.06em;
-  border-bottom: 1px solid #1f2937; white-space: nowrap;
-}
-.tx-table thead th.sortable { cursor: pointer; }
-.tx-table thead th.sortable:hover { color: #9ca3af; }
-.tx-table tbody tr { transition: background 0.1s; }
-.tx-table tbody tr:hover { background: rgba(59,130,246,0.06) !important; }
-.tx-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.01); }
-.tx-table tbody td {
-  padding: 8px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); color: #e5e7eb;
+:root {
+  --background: #000000;
+  --foreground: #ffffff;
 }
 
-/* Filter chips */
-.f-chip {
-  padding: 5px 14px; font-size: 12px; border-radius: 6px; border: 1px solid transparent;
-  cursor: pointer; font-weight: 500; transition: all 0.15s; white-space: nowrap;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
 }
-.f-chip-on { background: rgba(59,130,246,0.15); color: #60a5fa; border-color: rgba(59,130,246,0.3); }
-.f-chip-off { background: #111318; color: #6b7280; border-color: #1f2937; }
-.f-chip-off:hover { background: #1a1d27; color: #9ca3af; }
 
-/* Filter input */
-.f-input {
-  width: 100%; padding: 7px 10px; font-size: 12px;
-  background: #111318; border: 1px solid #1f2937; border-radius: 6px;
-  color: #e5e7eb; outline: none; transition: border-color 0.15s;
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
 }
-.f-input:focus { border-color: #3b82f6; }
-.f-input::placeholder { color: #4b5563; }
 
-/* Client dropdown */
-.client-list {
-  max-height: 200px; overflow-y: auto; border: 1px solid #1f2937;
-  border-radius: 6px; background: #0d0d12;
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
-.client-list::-webkit-scrollbar { width: 3px; }
-.client-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
-.client-item {
-  padding: 6px 10px; font-size: 12px; cursor: pointer; color: #6b7280;
-  border-top: 1px solid rgba(255,255,255,0.03); transition: all 0.1s;
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
 }
-.client-item:first-child { border-top: none; }
-.client-item:hover { background: #1a1d27; color: #d1d5db; }
-.client-item-on { background: rgba(59,130,246,0.08) !important; color: #60a5fa !important; font-weight: 600; }
 
-/* Page button */
-.pg-btn {
-  padding: 5px 12px; font-size: 12px; border: 1px solid #1f2937; border-radius: 6px;
-  background: #111318; color: #d1d5db; cursor: pointer; transition: all 0.1s;
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 4px;
 }
-.pg-btn:hover:not(:disabled) { background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.3); color: #60a5fa; }
-.pg-btn:disabled { opacity: 0.3; cursor: default; }
 
-/* Badge */
-.badge-dm { background: rgba(59,130,246,0.12); color: #60a5fa; }
-.badge-n { background: rgba(168,85,247,0.12); color: #c084fc; }
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3a;
+}
 
-/* Animations */
-@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-.anim-fade { animation: fadeIn 0.2s ease-out; }
-@keyframes pulse-soft { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
-.pulse-soft { animation: pulse-soft 1.5s ease-in-out infinite; }
+/* STOP 상태 깜박임 — rose-500 */
+@keyframes stop-pulse-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(244, 63, 94, 0.55),
+      0 0 12px 2px rgba(244, 63, 94, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px rgba(244, 63, 94, 0.95),
+      0 0 38px 12px rgba(244, 63, 94, 0.85);
+  }
+}
+
+.animate-stop-pulse {
+  animation: stop-pulse-glow 1.3s ease-in-out infinite;
+}
+
+@keyframes stop-banner-pulse {
+  0%, 100% { opacity: 1; filter: brightness(1); }
+  50% { opacity: 0.75; filter: brightness(1.15); }
+}
+
+.animate-stop-banner {
+  animation: stop-banner-pulse 1.3s ease-in-out infinite;
+}
+
+/* 대기 물량 초과 깜박임 — amber-500 (대기 박스만) */
+@keyframes overload-box-pulse {
+  0%, 100% {
+    background-color: rgba(245, 158, 11, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.35);
+  }
+  50% {
+    background-color: rgba(245, 158, 11, 0.42);
+    box-shadow: inset 0 0 9px 1px rgba(245, 158, 11, 0.55);
+  }
+}
+
+.animate-overload-box {
+  animation: overload-box-pulse 1.4s ease-in-out infinite;
+}

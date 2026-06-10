@@ -1,4 +1,4 @@
-import ComingSoon from '../../../components/ComingSoon';
+import ComingSoon from '@/components/ComingSoon';
 
 export default function Page() {
   return <ComingSoon title="월간 리포트" description="월간 생산 실적 리포트를 생성합니다." />;

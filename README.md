@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Production Hub v2.1
 
-## Getting Started
+제작공정 대시보드 + 거래명세서 관리 시스템
 
-First, run the development server:
+## 변경사항 (v2.1)
+
+- **거래명세서 관리** 페이지 추가 (`/transaction`)
+  - 사업부 필터 (DM사업부 / N사업부)
+  - 일자 범위 검색
+  - 고객사 검색 (59개 고객사)
+  - 제품 관리 (추가/수정/삭제)
+  - 담당자 필터 (사업부별 자동 연동)
+  - 업무명 키워드 검색
+  - 컬럼 정렬 / 50건 페이지네이션
+  - 운영통계 27,419건 전체 데이터 포함
+
+## 페이지 구조
+
+- `/` — 공정 흐름도 (LIVE)
+- `/transaction` — 거래명세서 관리 ← NEW
+- `/dashboard` — 일일 대시보드
+- `/analytics` — 기간별 집계
+
+## 시작하기
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 배포
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+git add .
+git commit -m "v2.1 - 거래명세서 관리 추가"
+git push origin main
+# Vercel 자동 배포
+```

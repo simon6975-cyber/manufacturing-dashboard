@@ -19,12 +19,12 @@ const Navigation: React.FC = () => {
   ];
 
   return (
-    <nav className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg">
+    <nav className="bg-gray-950 text-white shadow-lg border-b border-gray-800">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           {/* 로고 */}
           <Link href="/" className="flex items-center gap-2 font-bold text-xl">
-            <Factory className="w-6 h-6" />
+            <Factory className="w-6 h-6 text-blue-400" />
             <span>제작공정 대시보드</span>
           </Link>
 
@@ -39,8 +39,8 @@ const Navigation: React.FC = () => {
                   href={item.href}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
                     isActive
-                      ? 'bg-blue-400 text-white'
-                      : 'hover:bg-blue-500 text-blue-100'
+                      ? 'bg-blue-600 text-white'
+                      : 'hover:bg-gray-800 text-gray-300'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -53,7 +53,7 @@ const Navigation: React.FC = () => {
           {/* 모바일 메뉴 버튼 */}
           <button
             onClick={() => setIsOpen(!isOpen)}
-            className="md:hidden p-2 hover:bg-blue-500 rounded-lg transition-colors"
+            className="md:hidden p-2 hover:bg-gray-800 rounded-lg transition-colors"
           >
             {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
@@ -72,8 +72,8 @@ const Navigation: React.FC = () => {
                   onClick={() => setIsOpen(false)}
                   className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors block ${
                     isActive
-                      ? 'bg-blue-400 text-white'
-                      : 'hover:bg-blue-500 text-blue-100'
+                      ? 'bg-blue-600 text-white'
+                      : 'hover:bg-gray-800 text-gray-300'
                   }`}
                 >
                   <Icon className="w-4 h-4" />

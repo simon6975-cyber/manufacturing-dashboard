@@ -86,11 +86,20 @@ const StopAndBottleneckChart: React.FC<StopAndBottleneckChartProps> = ({
     }));
   }, [bottleneckChartData]);
 
+  // 차트 공통 스타일
+  const chartTooltipStyle = {
+    backgroundColor: '#111827',
+    border: '1px solid #1f2937',
+    borderRadius: '8px',
+    color: '#f3f4f6',
+  };
+  const axisStyle = { fill: '#9ca3af', fontSize: 12 };
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 bg-gray-50">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 bg-black">
       {/* 정지코드 분석 */}
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <h2 className="text-lg font-bold text-gray-800 mb-4">
+      <div className="bg-gray-900 rounded-lg shadow-lg p-6 border border-gray-800">
+        <h2 className="text-lg font-bold text-white mb-4">
           📊 정지코드 분석 (상위 6가지)
         </h2>
 
@@ -100,15 +109,12 @@ const StopAndBottleneckChart: React.FC<StopAndBottleneckChartProps> = ({
             <div>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={stopCodeChartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="code" angle={-45} textAnchor="end" height={80} />
-                  <YAxis />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <XAxis dataKey="code" angle={-45} textAnchor="end" height={80} tick={axisStyle} />
+                  <YAxis tick={axisStyle} />
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#f9fafb',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                    }}
+                    contentStyle={chartTooltipStyle}
+                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                     formatter={(value) => [`${value}회`, '정지']}
                   />
                   <Bar dataKey="count" fill="#EF4444" radius={[8, 8, 0, 0]} />
@@ -118,7 +124,7 @@ const StopAndBottleneckChart: React.FC<StopAndBottleneckChartProps> = ({
 
             {/* 카테고리별 분포 파이 차트 */}
             <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-gray-700">카테고리별 분포</h3>
+              <h3 className="text-sm font-semibold text-gray-300">카테고리별 분포</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <PieChart>
                   <Pie
@@ -128,30 +134,30 @@ const StopAndBottleneckChart: React.FC<StopAndBottleneckChartProps> = ({
                     cx="50%"
                     cy="50%"
                     outerRadius={60}
-                    label
+                    label={{ fill: '#9ca3af' }}
                   >
                     {categoryDistribution.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="#111827" />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value) => `${value}회`} />
+                  <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => `${value}회`} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
 
             {/* 상세 리스트 */}
             <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-gray-700">상세 정지코드</h3>
+              <h3 className="text-sm font-semibold text-gray-300">상세 정지코드</h3>
               <div className="space-y-1 max-h-40 overflow-y-auto">
                 {stopCodeChartData
                   .sort((a, b) => b.count - a.count)
                   .map((data) => (
-                    <div key={data.code} className="flex items-center justify-between p-2 hover:bg-gray-100 rounded text-sm">
+                    <div key={data.code} className="flex items-center justify-between p-2 hover:bg-gray-800 rounded text-sm">
                       <div className="flex-1">
-                        <span className="font-medium text-gray-700">{data.code}</span>
-                        <span className="text-gray-600 ml-2">{data.name}</span>
+                        <span className="font-medium text-gray-200">{data.code}</span>
+                        <span className="text-gray-400 ml-2">{data.name}</span>
                       </div>
-                      <span className="font-bold text-red-600">{data.count}회</span>
+                      <span className="font-bold text-red-400">{data.count}회</span>
                     </div>
                   ))}
               </div>
@@ -163,8 +169,8 @@ const StopAndBottleneckChart: React.FC<StopAndBottleneckChartProps> = ({
       </div>
 
       {/* 병목코드 분석 */}
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <h2 className="text-lg font-bold text-gray-800 mb-4">
+      <div className="bg-gray-900 rounded-lg shadow-lg p-6 border border-gray-800">
+        <h2 className="text-lg font-bold text-white mb-4">
           🚧 병목코드 분석 (상위 10가지)
         </h2>
 
@@ -176,15 +182,12 @@ const StopAndBottleneckChart: React.FC<StopAndBottleneckChartProps> = ({
                 <BarChart
                   data={bottleneckChartData.sort((a, b) => b.count - a.count).slice(0, 10)}
                 >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="code" angle={-45} textAnchor="end" height={80} />
-                  <YAxis />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                  <XAxis dataKey="code" angle={-45} textAnchor="end" height={80} tick={axisStyle} />
+                  <YAxis tick={axisStyle} />
                   <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#f9fafb',
-                      border: '1px solid #e5e7eb',
-                      borderRadius: '8px',
-                    }}
+                    contentStyle={chartTooltipStyle}
+                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
                     formatter={(value) => [`${value}건`, '병목']}
                   />
                   <Bar dataKey="count" fill="#F97316" radius={[8, 8, 0, 0]} />
@@ -194,7 +197,7 @@ const StopAndBottleneckChart: React.FC<StopAndBottleneckChartProps> = ({
 
             {/* 심각도별 분포 */}
             <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-gray-700">심각도별 분포</h3>
+              <h3 className="text-sm font-semibold text-gray-300">심각도별 분포</h3>
               <ResponsiveContainer width="100%" height={200}>
                 <PieChart>
                   <Pie
@@ -204,20 +207,20 @@ const StopAndBottleneckChart: React.FC<StopAndBottleneckChartProps> = ({
                     cx="50%"
                     cy="50%"
                     outerRadius={60}
-                    label
+                    label={{ fill: '#9ca3af' }}
                   >
-                    <Cell fill="#EF4444" />
-                    <Cell fill="#EAB308" />
-                    <Cell fill="#22C55E" />
+                    <Cell fill="#EF4444" stroke="#111827" />
+                    <Cell fill="#EAB308" stroke="#111827" />
+                    <Cell fill="#22C55E" stroke="#111827" />
                   </Pie>
-                  <Tooltip formatter={(value) => `${value}건`} />
+                  <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => `${value}건`} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
 
             {/* 상세 리스트 */}
             <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-gray-700">상위 병목항목</h3>
+              <h3 className="text-sm font-semibold text-gray-300">상위 병목항목</h3>
               <div className="space-y-1 max-h-40 overflow-y-auto">
                 {bottleneckChartData
                   .sort((a, b) => b.count - a.count)
@@ -225,22 +228,22 @@ const StopAndBottleneckChart: React.FC<StopAndBottleneckChartProps> = ({
                   .map((data) => {
                     const severityColor =
                       data.severity === 'high'
-                        ? 'bg-red-100 text-red-800'
+                        ? 'bg-red-950 text-red-300 border border-red-800'
                         : data.severity === 'medium'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-green-100 text-green-800';
+                        ? 'bg-yellow-950 text-yellow-300 border border-yellow-800'
+                        : 'bg-green-950 text-green-300 border border-green-800';
 
                     return (
-                      <div key={data.code} className="flex items-center justify-between p-2 hover:bg-gray-100 rounded text-sm">
+                      <div key={data.code} className="flex items-center justify-between p-2 hover:bg-gray-800 rounded text-sm">
                         <div className="flex-1">
-                          <span className="font-medium text-gray-700">{data.code}</span>
-                          <span className="text-gray-600 ml-2">{data.name}</span>
+                          <span className="font-medium text-gray-200">{data.code}</span>
+                          <span className="text-gray-400 ml-2">{data.name}</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className={`px-2 py-1 rounded text-xs font-medium ${severityColor}`}>
                             {data.severity}
                           </span>
-                          <span className="font-bold text-orange-600 w-8 text-right">{data.count}</span>
+                          <span className="font-bold text-orange-400 w-8 text-right">{data.count}</span>
                         </div>
                       </div>
                     );

@@ -1,6 +1,6 @@
 {
-  "name": "manufacturing-dashboard",
-  "version": "0.1.0",
+  "name": "podcenter-dashboard",
+  "version": "2.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,13 +9,11 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "firebase": "^12.13.0",
-    "lucide-react": "^1.16.0",
-    "next": "16.2.6",
+    "firebase": "^12.14.0",
+    "lucide-react": "^1.17.0",
+    "next": "16.2.9",
     "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "recharts": "^3.8.1",
-    "zustand": "^5.0.13"
+    "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -23,7 +21,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.2.6",
+    "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

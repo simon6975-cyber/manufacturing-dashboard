@@ -11,13 +11,14 @@ import {
   CalendarDays,
   Building2,
   Package,
+  ClipboardList,
   FileText,
   SlidersHorizontal,
   ListChecks,
   FileSpreadsheet,
 } from 'lucide-react';
 
-const APP_VERSION = 'v1.2';
+const APP_VERSION = 'v1.3';
 
 type NavItem = {
   href: string;
@@ -41,6 +42,7 @@ const sections: { title: string; items: NavItem[] }[] = [
       { href: '/summary/period', label: '기간별', icon: CalendarDays },
       { href: '/summary/department', label: '부서별', icon: Building2 },
       { href: '/summary/product', label: '제품별', icon: Package },
+      { href: '/summary/transaction', label: '거래명세서 관리', icon: ClipboardList },
     ],
   },
   {

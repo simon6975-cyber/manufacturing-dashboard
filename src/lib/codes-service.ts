@@ -14,9 +14,9 @@ import {
 import { db } from './firebase';
 
 // ============================================
-// 타입 정의
+// \ud0c0\uc785 \uc815\uc758
 // ============================================
-export type Severity = '높음' | '보통' | '낮음';
+export type Severity = '\ub192\uc74c' | '\ubcf4\ud1b5' | '\ub0ae\uc74c';
 
 export interface StopCodeV2 {
   id: string;
@@ -44,7 +44,7 @@ export interface CodeHistoryEntry {
 }
 
 // ============================================
-// Firestore 경로
+// Firestore \uacbd\ub85c
 // ============================================
 const SETTINGS_COLLECTION = 'code_settings';
 const STOP_CODES_DOC_ID = 'stop_codes';
@@ -52,7 +52,7 @@ const BN_CODES_DOC_ID = 'bottleneck_codes';
 const HISTORY_COLLECTION = 'code_history';
 
 // ============================================
-// 정지 코드
+// \uc815\uc9c0 \ucf54\ub4dc
 // ============================================
 export async function loadStopCodes(): Promise<StopCodeV2[] | null> {
   try {
@@ -75,7 +75,7 @@ export async function saveStopCodes(codes: StopCodeV2[]): Promise<void> {
 }
 
 // ============================================
-// 병목 코드
+// \ubcd1\ubaa9 \ucf54\ub4dc
 // ============================================
 export async function loadBottleneckCodes(): Promise<BottleneckCodeV2[] | null> {
   try {
@@ -98,7 +98,7 @@ export async function saveBottleneckCodes(codes: BottleneckCodeV2[]): Promise<vo
 }
 
 // ============================================
-// 변경 이력
+// \ubcc0\uacbd \uc774\ub825
 // ============================================
 export async function addHistoryEntry(
   entry: Omit<CodeHistoryEntry, 'id' | 'timestamp'>

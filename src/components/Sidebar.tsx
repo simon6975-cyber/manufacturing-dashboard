@@ -74,7 +74,7 @@ const Sidebar: React.FC = () => {
         <p className="text-[11px] text-gray-500 tracking-wider font-mono">
           {yyyy}.{mm}.{dd} · {dayStr}
         </p>
-        <p className="text-[9px] text-gray-600 font-mono mt-0.5">v2.1</p>
+        <p className="text-[9px] text-gray-600 font-mono mt-0.5">v2.2</p>
       </div>
 
       {/* 메뉴 */}

@@ -5,7 +5,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface Record {
   mk: string; rg: string; rn: number; wn: number; task: string; date: string;
-  ws: string; wname: string; detail: string; semi: string; pCnt: string;
+  wname: string; detail: string; semi: string; pCnt: string;
   sheets: number; cnt: number; oPages: number; bPages: number; client: string;
 }
 

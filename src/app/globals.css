@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #000000;
+  --foreground: #ffffff;
 }
 
 @theme inline {
@@ -12,15 +12,69 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3a;
+}
+
+/* STOP 상태 깜박임 — rose-500 */
+@keyframes stop-pulse-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(244, 63, 94, 0.55),
+      0 0 12px 2px rgba(244, 63, 94, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px rgba(244, 63, 94, 0.95),
+      0 0 38px 12px rgba(244, 63, 94, 0.85);
+  }
+}
+
+.animate-stop-pulse {
+  animation: stop-pulse-glow 1.3s ease-in-out infinite;
+}
+
+@keyframes stop-banner-pulse {
+  0%, 100% { opacity: 1; filter: brightness(1); }
+  50% { opacity: 0.75; filter: brightness(1.15); }
+}
+
+.animate-stop-banner {
+  animation: stop-banner-pulse 1.3s ease-in-out infinite;
+}
+
+/* 대기 물량 초과 깜박임 — amber-500 (대기 박스만) */
+@keyframes overload-box-pulse {
+  0%, 100% {
+    background-color: rgba(245, 158, 11, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.35);
+  }
+  50% {
+    background-color: rgba(245, 158, 11, 0.42);
+    box-shadow: inset 0 0 9px 1px rgba(245, 158, 11, 0.55);
+  }
+}
+
+.animate-overload-box {
+  animation: overload-box-pulse 1.4s ease-in-out infinite;
 }

@@ -1,0 +1,15 @@
+/* ═══ 거래명세서 관리 페이지 전용 스타일 ═══ */
+/* 이 내용을 기존 globals.css 맨 아래에 추가하세요 */
+
+.tx-input {
+  width: 100%; padding: 7px 10px; font-size: 12px;
+  background: #111318; border: 1px solid #1f2937; border-radius: 6px;
+  color: #e5e7eb; outline: none; transition: border-color 0.15s;
+}
+.tx-input:focus { border-color: #3b82f6; }
+.tx-input::placeholder { color: #4b5563; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}

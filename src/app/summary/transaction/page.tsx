@@ -25,6 +25,20 @@ interface TransactionRow {
 }
 
 // ============================================
+// 사업부별 영업담당 매핑
+// ============================================
+const DIVISION_MEMBERS: Record<string, string[]> = {
+  'DM사업부': ['김성수', '노재민', '강서윤', '김희원', '임병민'],
+  'N사업부': ['김정기', '오창희', '조영환', '박현수', '안제하', '박성진', '한승희'],
+};
+const ALL_MEMBERS = [...DIVISION_MEMBERS['DM사업부'], ...DIVISION_MEMBERS['N사업부']];
+const getDivision = (name: string): string => {
+  if (DIVISION_MEMBERS['DM사업부'].includes(name)) return 'DM사업부';
+  if (DIVISION_MEMBERS['N사업부'].includes(name)) return 'N사업부';
+  return '';
+};
+
+// ============================================
 // 유틸
 // ============================================
 const formatDate = (raw: any): string => {
@@ -69,6 +83,7 @@ export default function TransactionPage() {
 
   // 필터
   const [fStatus, setFStatus] = useState('전체');
+  const [fDivision, setFDivision] = useState('전체');
   const [fCustomer, setFCustomer] = useState('전체');
   const [fDateFrom, setFDateFrom] = useState('');
   const [fDateTo, setFDateTo] = useState('');
@@ -113,19 +128,26 @@ export default function TransactionPage() {
     if (file) handleFile(file);
   }, [handleFile]);
 
-  // 필터 옵션 (데이터에서 추출)
+  // 필터 옵션 (데이터에서 추출, 사업부 연동)
   const filterOptions = useMemo(() => {
     const customers = [...new Set(data.map((r) => r.고객사).filter(Boolean))].sort();
-    const sales = [...new Set(data.map((r) => r.영업담당).filter(Boolean))].sort();
+    const divMembers = fDivision !== '전체' ? DIVISION_MEMBERS[fDivision] || [] : null;
+    const sales = divMembers
+      ? divMembers.filter((m) => data.some((r) => r.영업담당 === m))
+      : [...new Set(data.map((r) => r.영업담당).filter(Boolean))].sort();
     const ops = [...new Set(data.map((r) => r.운영담당).filter(Boolean))].sort();
     return { customers, sales, ops };
-  }, [data]);
+  }, [data, fDivision]);
 
   // 필터링
   const filtered = useMemo(() => {
     const q = fSearch.toLowerCase();
     return data.filter((r) => {
       if (fStatus !== '전체' && r.발행여부 !== fStatus) return false;
+      if (fDivision !== '전체') {
+        const members = DIVISION_MEMBERS[fDivision] || [];
+        if (!members.includes(r.영업담당)) return false;
+      }
       if (fCustomer !== '전체' && r.고객사 !== fCustomer) return false;
       if (fSales !== '전체' && r.영업담당 !== fSales) return false;
       if (fOps !== '전체' && r.운영담당 !== fOps) return false;
@@ -134,7 +156,7 @@ export default function TransactionPage() {
       if (q && !Object.values(r).some((v) => String(v).toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [data, fStatus, fCustomer, fSales, fOps, fDateFrom, fDateTo, fSearch]);
+  }, [data, fStatus, fDivision, fCustomer, fSales, fOps, fDateFrom, fDateTo, fSearch]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageData = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
@@ -142,11 +164,11 @@ export default function TransactionPage() {
   const nCount = filtered.filter((r) => r.발행여부 === 'N').length;
 
   const handleReset = () => {
-    setFStatus('전체'); setFCustomer('전체'); setFSales('전체'); setFOps('전체');
+    setFStatus('전체'); setFDivision('전체'); setFCustomer('전체'); setFSales('전체'); setFOps('전체');
     setFDateFrom(''); setFDateTo(''); setFSearch(''); setPage(0);
   };
 
-  const hasFilter = fStatus !== '전체' || fCustomer !== '전체' || fSales !== '전체' || fOps !== '전체' || fDateFrom || fDateTo || fSearch;
+  const hasFilter = fStatus !== '전체' || fDivision !== '전체' || fCustomer !== '전체' || fSales !== '전체' || fOps !== '전체' || fDateFrom || fDateTo || fSearch;
 
   // 엑셀 다운로드
   const handleExport = () => {
@@ -235,8 +257,9 @@ export default function TransactionPage() {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
           <SelectFilter label="발행여부" value={fStatus} onChange={(v) => { setFStatus(v); setPage(0); }} options={['Y', 'N']} />
+          <SelectFilter label="사업부" value={fDivision} onChange={(v) => { setFDivision(v); setFSales('전체'); setPage(0); }} options={['DM사업부', 'N사업부']} />
           <SelectFilter label="고객사" value={fCustomer} onChange={(v) => { setFCustomer(v); setPage(0); }} options={filterOptions.customers} count={filterOptions.customers.length} />
           <div>
             <label className="block text-[11px] text-gray-500 uppercase tracking-wider mb-1.5">시작일</label>

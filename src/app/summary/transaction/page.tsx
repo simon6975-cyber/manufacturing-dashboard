@@ -85,12 +85,27 @@ export default function TransactionPage() {
   const [fStatus, setFStatus] = useState('전체');
   const [fDivision, setFDivision] = useState('전체');
   const [fCustomer, setFCustomer] = useState('전체');
+  const [fMonth, setFMonth] = useState('');
   const [fDateFrom, setFDateFrom] = useState('');
   const [fDateTo, setFDateTo] = useState('');
   const [fSales, setFSales] = useState('전체');
   const [fOps, setFOps] = useState('전체');
   const [fSearch, setFSearch] = useState('');
 
+  // 월 선택 → 시작일/종료일 자동 설정
+  const handleMonthChange = (v: string) => {
+    setFMonth(v);
+    if (v) {
+      const [y, m] = v.split('-').map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      setFDateFrom(`${v}-01`);
+      setFDateTo(`${v}-${String(lastDay).padStart(2, '0')}`);
+    } else {
+      setFDateFrom('');
+      setFDateTo('');
+    }
+    setPage(0);
+  };
   // 엑셀 파싱
   const handleFile = useCallback((file: File) => {
     const reader = new FileReader();
@@ -164,11 +179,11 @@ export default function TransactionPage() {
   const nCount = filtered.filter((r) => r.발행여부 === 'N').length;
 
   const handleReset = () => {
-    setFStatus('전체'); setFDivision('전체'); setFCustomer('전체'); setFSales('전체'); setFOps('전체');
+    setFStatus('전체'); setFDivision('전체'); setFCustomer('전체'); setFMonth(''); setFSales('전체'); setFOps('전체');
     setFDateFrom(''); setFDateTo(''); setFSearch(''); setPage(0);
   };
 
-  const hasFilter = fStatus !== '전체' || fDivision !== '전체' || fCustomer !== '전체' || fSales !== '전체' || fOps !== '전체' || fDateFrom || fDateTo || fSearch;
+  const hasFilter = fStatus !== '전체' || fDivision !== '전체' || fCustomer !== '전체' || fMonth || fSales !== '전체' || fOps !== '전체' || fDateFrom || fDateTo || fSearch;
 
   // 엑셀 다운로드
   const handleExport = () => {
@@ -257,18 +272,23 @@ export default function TransactionPage() {
             </button>
           )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           <SelectFilter label="발행여부" value={fStatus} onChange={(v) => { setFStatus(v); setPage(0); }} options={['Y', 'N']} />
           <SelectFilter label="사업부" value={fDivision} onChange={(v) => { setFDivision(v); setFSales('전체'); setPage(0); }} options={['DM사업부', 'N사업부']} />
           <SelectFilter label="고객사" value={fCustomer} onChange={(v) => { setFCustomer(v); setPage(0); }} options={filterOptions.customers} count={filterOptions.customers.length} />
           <div>
+            <label className="block text-[11px] text-gray-500 uppercase tracking-wider mb-1.5">월 검색</label>
+            <input type="month" value={fMonth} onChange={(e) => handleMonthChange(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500/50 [color-scheme:dark]" />
+          </div>
+          <div>
             <label className="block text-[11px] text-gray-500 uppercase tracking-wider mb-1.5">시작일</label>
-            <input type="date" value={fDateFrom} onChange={(e) => { setFDateFrom(e.target.value); setPage(0); }}
+            <input type="date" value={fDateFrom} onChange={(e) => { setFDateFrom(e.target.value); setFMonth(''); setPage(0); }}
               className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500/50 [color-scheme:dark]" />
           </div>
           <div>
             <label className="block text-[11px] text-gray-500 uppercase tracking-wider mb-1.5">종료일</label>
-            <input type="date" value={fDateTo} onChange={(e) => { setFDateTo(e.target.value); setPage(0); }}
+            <input type="date" value={fDateTo} onChange={(e) => { setFDateTo(e.target.value); setFMonth(''); setPage(0); }}
               className="w-full bg-gray-800 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-200 outline-none focus:border-blue-500/50 [color-scheme:dark]" />
           </div>
           <SelectFilter label="영업담당" value={fSales} onChange={(v) => { setFSales(v); setPage(0); }} options={filterOptions.sales} />

@@ -1,7 +1,7 @@
 // src/app/summary/transaction/page.tsx
 'use client';
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Search, Download, Filter, Upload, FileSpreadsheet,
@@ -92,6 +92,17 @@ export default function TransactionPage() {
   const [fOps, setFOps] = useState('전체');
   const [fSearch, setFSearch] = useState('');
 
+  // localStorage에서 이전 데이터 복원
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('transaction_data');
+      const savedName = localStorage.getItem('transaction_fileName');
+      if (saved && savedName) {
+        setData(JSON.parse(saved));
+        setFileName(savedName);
+      }
+    } catch (e) { console.error('데이터 복원 실패:', e); }
+  }, []);
   // 월 선택 → 시작일/종료일 자동 설정
   const handleMonthChange = (v: string) => {
     setFMonth(v);
@@ -128,6 +139,11 @@ export default function TransactionPage() {
       setData(rows);
       setFileName(file.name);
       setPage(0);
+      // localStorage에 저장 (페이지 이동 후에도 유지)
+      try {
+        localStorage.setItem('transaction_data', JSON.stringify(rows));
+        localStorage.setItem('transaction_fileName', file.name);
+      } catch (e) { console.error('데이터 저장 실패:', e); }
     };
     reader.readAsArrayBuffer(file);
   }, []);
@@ -233,7 +249,7 @@ export default function TransactionPage() {
             </span>
             <span className="text-xs text-gray-600">|</span>
             <span className="text-sm text-gray-400">{data.length.toLocaleString()}건</span>
-            <button onClick={() => { setData([]); setFileName(''); handleReset(); }}
+            <button onClick={() => { setData([]); setFileName(''); handleReset(); localStorage.removeItem('transaction_data'); localStorage.removeItem('transaction_fileName'); }}
               className="text-xs text-gray-500 hover:text-gray-300 underline underline-offset-2">다른 파일</button>
           </div>
         </div>

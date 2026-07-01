@@ -8,6 +8,7 @@ import {
 import {
   Play, Pause, AlertCircle, Settings, ChevronRight, RefreshCw, AlertTriangle, X,
 } from 'lucide-react';
+import { subscribeMachines, MachineState } from '@/lib/machine-service';
 
 type Status = 'RUN' | 'IDLE' | 'STOP' | 'SETUP';
 
@@ -123,9 +124,7 @@ function getAchievementRate(monthly: number, dailyTarget: number): number {
 const ProcessCard: React.FC<{
   process: ProcessData;
   onSelect?: (no: number) => void;
-  now: number;
-  mountTime: number;
-}> = ({ process, onSelect, now, mountTime }) => {
+}> = ({ process, onSelect }) => {
   const cfg = statusConfig[process.status];
   const StatusIcon = cfg.icon;
   const isStop = process.status === 'STOP';
@@ -143,7 +142,7 @@ const ProcessCard: React.FC<{
     : 'bg-amber-300/10 border-amber-300/20';
   const queueTextClass = isOverloaded ? 'text-amber-300' : 'text-amber-200';
 
-  const elapsedSeconds = process.initialElapsedSeconds + Math.floor((now - mountTime) / 1000);
+  const elapsedSeconds = process.initialElapsedSeconds;
 
   return (
     <div
@@ -347,38 +346,68 @@ const ProcessFlowDiagram: React.FC = () => {
   const [selectedNo, setSelectedNo] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const mountTimeRef = useRef(Date.now());
+  const [firebaseStates, setFirebaseStates] = useState<Record<number, MachineState>>({});
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
 
+  // Firebase 실시간 구독
+  useEffect(() => {
+    const unsub = subscribeMachines((states) => {
+      setFirebaseStates(states);
+    });
+    return unsub;
+  }, []);
+
+  // Firebase 데이터와 기본 데이터 병합
   const p = useMemo(() => {
     const map: Record<number, ProcessData> = {};
-    processes.forEach((proc) => { map[proc.no] = proc; });
+    processes.forEach((proc) => {
+      const fb = firebaseStates[proc.no];
+      if (fb) {
+        // Firebase 연동된 장비: 실시간 상태
+        const elapsed = Math.max(0, Math.floor((now - fb.statusChangedAt.getTime()) / 1000));
+        map[proc.no] = {
+          ...proc,
+          status: fb.status,
+          stopReason: fb.stopReason,
+          initialElapsedSeconds: elapsed,
+          queue: fb.status === 'IDLE' ? 0 : proc.queue,
+          queueCount: fb.status === 'IDLE' ? 0 : proc.queueCount,
+          inProgress: fb.status === 'RUN' ? proc.inProgress : 0,
+          jobProgress: fb.status === 'RUN' ? proc.jobProgress : 0,
+        };
+      } else {
+        // Firebase 미연동: 기본 데이터 + 시간 흐름
+        const elapsed = proc.initialElapsedSeconds + Math.floor((now - mountTimeRef.current) / 1000);
+        map[proc.no] = { ...proc, initialElapsedSeconds: elapsed };
+      }
+    });
     return map;
-  }, []);
+  }, [firebaseStates, now]);
 
   const statusCounts = useMemo(() => {
     const counts = { RUN: 0, IDLE: 0, STOP: 0, SETUP: 0 };
-    processes.forEach((proc) => counts[proc.status]++);
+    Object.values(p).forEach((proc) => counts[proc.status]++);
     return counts;
-  }, []);
+  }, [p]);
 
   const overloadedCount = useMemo(
-    () => processes.filter((proc) => proc.status === 'RUN' && proc.queue >= proc.queueThreshold).length, []
+    () => Object.values(p).filter((proc) => proc.status === 'RUN' && proc.queue >= proc.queueThreshold).length, [p]
   );
 
   const totals = useMemo(() => {
     let queue = 0, queueCount = 0, completed = 0;
-    processes.forEach((proc) => {
+    Object.values(p).forEach((proc) => {
       const isIdle = proc.status === 'IDLE';
       queue += isIdle ? 0 : proc.queue;
       queueCount += isIdle ? 0 : proc.queueCount;
       completed += proc.completed;
     });
     return { queue, queueCount, completed };
-  }, []);
+  }, [p]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedNo(null); };
@@ -386,7 +415,7 @@ const ProcessFlowDiagram: React.FC = () => {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  const cardProps = { onSelect: setSelectedNo, now, mountTime: mountTimeRef.current };
+  const cardProps = { onSelect: setSelectedNo };
 
   return (
     <div className="flex flex-col gap-4 p-5 bg-black min-h-full">

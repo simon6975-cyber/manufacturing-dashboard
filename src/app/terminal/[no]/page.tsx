@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Play, Square, AlertTriangle, Settings, ArrowLeft, Clock, ChevronDown,
+  Play, Square, AlertTriangle, Settings, Clock, ChevronDown,
 } from 'lucide-react';
 
 type Status = 'RUN' | 'IDLE' | 'STOP' | 'SETUP';
@@ -170,13 +170,22 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
     <div className={`fixed inset-0 z-50 bg-gradient-to-b ${STATUS_BG[status]} to-black overflow-y-auto`}>
       <div className="max-w-lg mx-auto p-5 min-h-full flex flex-col">
 
-        {/* 상단 헤더 */}
-        <div className="flex items-center justify-between mb-6">
-          <button onClick={() => router.push('/')}
-            className="flex items-center gap-1 text-gray-500 hover:text-gray-300 transition-colors text-sm">
-            <ArrowLeft className="w-4 h-4" />대시보드
-          </button>
-          <span className="text-xs text-gray-600 font-mono">{machine.group} · NO.{String(machineNo).padStart(2, '0')}</span>
+        {/* 상단: 공정 전환 */}
+        <div className="mb-5">
+          <div className="relative">
+            <select
+              value={machineNo}
+              onChange={(e) => router.push(`/terminal/${e.target.value}`)}
+              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-200 outline-none appearance-none focus:border-blue-500/50"
+            >
+              {Object.entries(MACHINES).map(([no, m]) => (
+                <option key={no} value={no} className="bg-gray-900">
+                  [{m.group}] NO.{String(no).padStart(2, '0')} {m.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
         </div>
 
         {/* 장비 정보 */}
@@ -285,25 +294,6 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
                 </div>
               );
             })}
-          </div>
-        </div>
-
-        {/* 공정 선택 (하단) */}
-        <div className="mt-6 pt-4 border-t border-gray-800">
-          <label className="block text-xs text-gray-500 mb-1.5">공정 전환</label>
-          <div className="relative">
-            <select
-              value={machineNo}
-              onChange={(e) => router.push(`/terminal/${e.target.value}`)}
-              className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-200 outline-none appearance-none focus:border-blue-500/50"
-            >
-              {Object.entries(MACHINES).map(([no, m]) => (
-                <option key={no} value={no} className="bg-gray-900">
-                  [{m.group}] NO.{String(no).padStart(2, '0')} {m.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
         </div>
       </div>

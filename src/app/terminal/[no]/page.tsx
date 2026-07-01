@@ -7,7 +7,7 @@ import {
   Play, Square, AlertTriangle, Settings, ArrowLeft, Clock, ChevronDown,
 } from 'lucide-react';
 
-type Status = 'RUN' | 'READY' | 'STOP' | 'SETUP';
+type Status = 'RUN' | 'IDLE' | 'STOP' | 'SETUP';
 
 // ============================================
 // 19개 공정 기본 정보
@@ -48,13 +48,13 @@ const STOP_CODES = [
 
 const STATUS_CONFIG: Record<Status, { label: string; bg: string; text: string; icon: React.ComponentType<{ className?: string }> }> = {
   RUN:   { label: '가동',  bg: 'bg-emerald-500', text: 'text-white', icon: Play },
-  READY: { label: '준비',  bg: 'bg-amber-400',   text: 'text-black', icon: Square },
+  IDLE: { label: '대기',  bg: 'bg-amber-400',   text: 'text-black', icon: Square },
   STOP:  { label: '정지',  bg: 'bg-rose-500',    text: 'text-white', icon: AlertTriangle },
   SETUP: { label: '셋업',  bg: 'bg-sky-500',     text: 'text-white', icon: Settings },
 };
 
 const STATUS_BG: Record<Status, string> = {
-  RUN: 'from-emerald-950/40', READY: 'from-amber-950/30', STOP: 'from-rose-950/40', SETUP: 'from-sky-950/30',
+  RUN: 'from-emerald-950/40', IDLE: 'from-amber-950/30', STOP: 'from-rose-950/40', SETUP: 'from-sky-950/30',
 };
 
 interface HistoryEntry {
@@ -84,7 +84,7 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
   const machine = MACHINES[machineNo];
   const router = useRouter();
 
-  const [status, setStatus] = useState<Status>('READY');
+  const [status, setStatus] = useState<Status>('IDLE');
   const [stopCode, setStopCode] = useState('');
   const [showStopModal, setShowStopModal] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -107,7 +107,7 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
       const saved = localStorage.getItem(`terminal_${machineNo}`);
       if (saved) {
         const parsed = JSON.parse(saved);
-        setStatus(parsed.status || 'READY');
+        setStatus(parsed.status || 'IDLE');
         setStopCode(parsed.stopCode || '');
         setHistory(parsed.history || []);
         // 경과시간 복원
@@ -221,17 +221,17 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
           </button>
 
           <button
-            onClick={() => changeStatus('READY')}
-            disabled={status === 'READY'}
+            onClick={() => changeStatus('IDLE')}
+            disabled={status === 'IDLE'}
             className={`flex flex-col items-center justify-center gap-2 py-6 rounded-xl font-bold text-lg transition-all ${
-              status === 'READY'
+              status === 'IDLE'
                 ? 'bg-amber-400/20 text-amber-300 border-2 border-amber-400 ring-2 ring-amber-400/30'
                 : 'bg-gray-900 text-gray-300 border-2 border-gray-700 hover:border-amber-400/60 hover:bg-amber-950/30 active:scale-95'
             }`}
           >
             <Square className="w-8 h-8" />
-            <span>READY</span>
-            <span className="text-[11px] font-normal opacity-60">준비</span>
+            <span>IDLE</span>
+            <span className="text-[11px] font-normal opacity-60">대기</span>
           </button>
 
           <button

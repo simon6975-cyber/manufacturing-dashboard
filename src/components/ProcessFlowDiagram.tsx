@@ -8,7 +8,7 @@ import {
 import {
   Play, Pause, AlertCircle, Settings, ChevronRight, RefreshCw, AlertTriangle, X,
 } from 'lucide-react';
-import { subscribeMachines, MachineState } from '@/lib/machine-service';
+import { subscribeMachines, MachineState, MachineHistoryEntry } from '@/lib/machine-service';
 
 type Status = 'RUN' | 'IDLE' | 'STOP' | 'SETUP';
 
@@ -29,6 +29,7 @@ interface ProcessData {
   dailyProduction: number;
   dailyTarget: number;
   bottleneckReason: string;
+  history: MachineHistoryEntry[];
 }
 
 const DEFAULT_QUEUE_THRESHOLD = 5000;
@@ -49,25 +50,25 @@ const stopCodeNames: Record<string, string> = {
 // 19개 공정 데이터
 // ============================================
 const processes: ProcessData[] = [
-  { no: 1,  name: '연속지출력 1호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 3682, queueCount: 3, inProgress: 1280, completed: 9318, jobProgress: 65, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 9252,  stopReason: 'S5', dailyProduction: 13814, dailyTarget: 13000, bottleneckReason: '' },
-  { no: 2,  name: '연속지출력 2호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 6240, queueCount: 5, inProgress: 2388, completed: 7939, jobProgress: 42, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 4530,  stopReason: '',   dailyProduction: 12500, dailyTarget: 13000, bottleneckReason: 'BN2' },
-  { no: 3,  name: 'R2C 1호기',       model: 'S2020',        maker: 'TECHNAU',    status: 'RUN',   queue: 5340, queueCount: 4, inProgress: 1190, completed: 5047, jobProgress: 78, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 13338, stopReason: '',   dailyProduction: 8200,  dailyTarget: 8000,  bottleneckReason: '' },
-  { no: 4,  name: 'R2C 2호기',       model: 'S2320',        maker: 'TECHNAU',    status: 'IDLE', queue: 0,    queueCount: 0, inProgress: 0,    completed: 4239, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 1425,  stopReason: 'S1', dailyProduction: 7800,  dailyTarget: 8000,  bottleneckReason: 'BN1' },
-  { no: 5,  name: '날장출력 1호기',   model: '이리데스',      maker: 'FUJI FILM',  status: 'RUN',   queue: 1076, queueCount: 2, inProgress: 488,  completed: 2424, jobProgress: 55, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 2902,  stopReason: '',   dailyProduction: 4100,  dailyTarget: 4000,  bottleneckReason: '' },
-  { no: 6,  name: '날장출력 2호기',   model: '레보리아',      maker: 'FUJI FILM',  status: 'STOP',  queue: 2786, queueCount: 3, inProgress: 0,    completed: 714,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 1091,  stopReason: 'S6', dailyProduction: 2200,  dailyTarget: 4000,  bottleneckReason: '' },
-  { no: 7,  name: '코팅 1호기',       model: 'EUROLAM 540',  maker: 'GMP',        status: 'RUN',   queue: 598,  queueCount: 1, inProgress: 800,  completed: 4402, jobProgress: 88, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 15308, stopReason: '',   dailyProduction: 6800,  dailyTarget: 6500,  bottleneckReason: '' },
-  { no: 8,  name: '코팅 2호기',       model: 'PROTOPIC 540', maker: 'GMP',        status: 'SETUP', queue: 2471, queueCount: 2, inProgress: 0,    completed: 2529, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 1975,  stopReason: 'S1', dailyProduction: 3900,  dailyTarget: 5000,  bottleneckReason: '' },
-  { no: 9,  name: '에폭시',           model: 'DDC 810',      maker: 'DUPLO',      status: 'RUN',   queue: 664,  queueCount: 1, inProgress: 361,  completed: 1336, jobProgress: 72, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 4124,  stopReason: '',   dailyProduction: 2400,  dailyTarget: 2500,  bottleneckReason: '' },
-  { no: 10, name: '수동재단 1호기',   model: 'POLAR 92',     maker: 'HEIDELBERG', status: 'RUN',   queue: 5430, queueCount: 4, inProgress: 695,  completed: 3373, jobProgress: 60, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 8493,  stopReason: '',   dailyProduction: 5600,  dailyTarget: 5500,  bottleneckReason: 'BN3' },
-  { no: 11, name: '수동재단 2호기',   model: 'C860',         maker: '대호',        status: 'IDLE', queue: 0,    queueCount: 0, inProgress: 0,    completed: 2802, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 687,   stopReason: '',   dailyProduction: 4800,  dailyTarget: 5000,  bottleneckReason: '' },
-  { no: 12, name: '제본 1호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 500,  queueCount: 1, inProgress: 273,  completed: 1500, jobProgress: 80, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 14102, stopReason: '',   dailyProduction: 2700,  dailyTarget: 2800,  bottleneckReason: '' },
-  { no: 13, name: '제본 2호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 712,  queueCount: 1, inProgress: 143,  completed: 1288, jobProgress: 90, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 10099, stopReason: '',   dailyProduction: 2300,  dailyTarget: 2500,  bottleneckReason: '' },
-  { no: 14, name: '제본 3호기',       model: 'BQ500/HT300',  maker: 'HORIZON',    status: 'STOP',  queue: 1818, queueCount: 2, inProgress: 0,    completed: 382,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 2558,  stopReason: 'S7', dailyProduction: 900,   dailyTarget: 2500,  bottleneckReason: '' },
-  { no: 15, name: '중철기',           model: 'SPF-200A',     maker: 'HORIZON',    status: 'RUN',   queue: 589,  queueCount: 1, inProgress: 322,  completed: 2911, jobProgress: 75, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 5631,  stopReason: '',   dailyProduction: 4900,  dailyTarget: 5000,  bottleneckReason: '' },
-  { no: 16, name: '날개접지기',       model: 'ZK320',        maker: '',           status: 'SETUP', queue: 1327, queueCount: 2, inProgress: 0,    completed: 1173, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 3074,  stopReason: 'S1', dailyProduction: 2100,  dailyTarget: 3000,  bottleneckReason: '' },
-  { no: 17, name: '시험지접지기',     model: 'CSMO',         maker: 'HUNKELER',   status: 'IDLE', queue: 0,    queueCount: 0, inProgress: 0,    completed: 522,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 308,   stopReason: '',   dailyProduction: 1100,  dailyTarget: 2000,  bottleneckReason: '' },
-  { no: 18, name: '박스포장',         model: '',             maker: '',           status: 'RUN',   queue: 730,  queueCount: 1, inProgress: 297,  completed: 770,  jobProgress: 50, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 7786,  stopReason: '',   dailyProduction: 1500,  dailyTarget: 1500,  bottleneckReason: '' },
-  { no: 19, name: '댐지포장',         model: '',             maker: '',           status: 'IDLE', queue: 0,    queueCount: 0, inProgress: 0,    completed: 646,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 862,   stopReason: '',   dailyProduction: 1300,  dailyTarget: 1500,  bottleneckReason: '' },
+  { no: 1,  name: '연속지출력 1호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 3682, queueCount: 3, inProgress: 1280, completed: 9318, jobProgress: 65, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 9252,  stopReason: 'S5', dailyProduction: 13814, dailyTarget: 13000, bottleneckReason: '', history: [] },
+  { no: 2,  name: '연속지출력 2호기', model: '520HD+',       maker: 'SCREEN',     status: 'RUN',   queue: 6240, queueCount: 5, inProgress: 2388, completed: 7939, jobProgress: 42, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 4530,  stopReason: '',   dailyProduction: 12500, dailyTarget: 13000, bottleneckReason: 'BN2', history: [] },
+  { no: 3,  name: 'R2C 1호기',       model: 'S2020',        maker: 'TECHNAU',    status: 'RUN',   queue: 5340, queueCount: 4, inProgress: 1190, completed: 5047, jobProgress: 78, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 13338, stopReason: '',   dailyProduction: 8200,  dailyTarget: 8000,  bottleneckReason: '', history: [] },
+  { no: 4,  name: 'R2C 2호기',       model: 'S2320',        maker: 'TECHNAU',    status: 'IDLE', queue: 0,    queueCount: 0, inProgress: 0,    completed: 4239, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 1425,  stopReason: 'S1', dailyProduction: 7800,  dailyTarget: 8000,  bottleneckReason: 'BN1', history: [] },
+  { no: 5,  name: '날장출력 1호기',   model: '이리데스',      maker: 'FUJI FILM',  status: 'RUN',   queue: 1076, queueCount: 2, inProgress: 488,  completed: 2424, jobProgress: 55, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 2902,  stopReason: '',   dailyProduction: 4100,  dailyTarget: 4000,  bottleneckReason: '', history: [] },
+  { no: 6,  name: '날장출력 2호기',   model: '레보리아',      maker: 'FUJI FILM',  status: 'STOP',  queue: 2786, queueCount: 3, inProgress: 0,    completed: 714,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 1091,  stopReason: 'S6', dailyProduction: 2200,  dailyTarget: 4000,  bottleneckReason: '', history: [] },
+  { no: 7,  name: '코팅 1호기',       model: 'EUROLAM 540',  maker: 'GMP',        status: 'RUN',   queue: 598,  queueCount: 1, inProgress: 800,  completed: 4402, jobProgress: 88, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 15308, stopReason: '',   dailyProduction: 6800,  dailyTarget: 6500,  bottleneckReason: '', history: [] },
+  { no: 8,  name: '코팅 2호기',       model: 'PROTOPIC 540', maker: 'GMP',        status: 'SETUP', queue: 2471, queueCount: 2, inProgress: 0,    completed: 2529, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 1975,  stopReason: 'S1', dailyProduction: 3900,  dailyTarget: 5000,  bottleneckReason: '', history: [] },
+  { no: 9,  name: '에폭시',           model: 'DDC 810',      maker: 'DUPLO',      status: 'RUN',   queue: 664,  queueCount: 1, inProgress: 361,  completed: 1336, jobProgress: 72, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 4124,  stopReason: '',   dailyProduction: 2400,  dailyTarget: 2500,  bottleneckReason: '', history: [] },
+  { no: 10, name: '수동재단 1호기',   model: 'POLAR 92',     maker: 'HEIDELBERG', status: 'RUN',   queue: 5430, queueCount: 4, inProgress: 695,  completed: 3373, jobProgress: 60, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 8493,  stopReason: '',   dailyProduction: 5600,  dailyTarget: 5500,  bottleneckReason: 'BN3', history: [] },
+  { no: 11, name: '수동재단 2호기',   model: 'C860',         maker: '대호',        status: 'IDLE', queue: 0,    queueCount: 0, inProgress: 0,    completed: 2802, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 687,   stopReason: '',   dailyProduction: 4800,  dailyTarget: 5000,  bottleneckReason: '', history: [] },
+  { no: 12, name: '제본 1호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 500,  queueCount: 1, inProgress: 273,  completed: 1500, jobProgress: 80, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 14102, stopReason: '',   dailyProduction: 2700,  dailyTarget: 2800,  bottleneckReason: '', history: [] },
+  { no: 13, name: '제본 2호기',       model: 'BQ470/HT80',   maker: 'HORIZON',    status: 'RUN',   queue: 712,  queueCount: 1, inProgress: 143,  completed: 1288, jobProgress: 90, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 10099, stopReason: '',   dailyProduction: 2300,  dailyTarget: 2500,  bottleneckReason: '', history: [] },
+  { no: 14, name: '제본 3호기',       model: 'BQ500/HT300',  maker: 'HORIZON',    status: 'STOP',  queue: 1818, queueCount: 2, inProgress: 0,    completed: 382,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 2558,  stopReason: 'S7', dailyProduction: 900,   dailyTarget: 2500,  bottleneckReason: '', history: [] },
+  { no: 15, name: '중철기',           model: 'SPF-200A',     maker: 'HORIZON',    status: 'RUN',   queue: 589,  queueCount: 1, inProgress: 322,  completed: 2911, jobProgress: 75, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 5631,  stopReason: '',   dailyProduction: 4900,  dailyTarget: 5000,  bottleneckReason: '', history: [] },
+  { no: 16, name: '날개접지기',       model: 'ZK320',        maker: '',           status: 'SETUP', queue: 1327, queueCount: 2, inProgress: 0,    completed: 1173, jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 3074,  stopReason: 'S1', dailyProduction: 2100,  dailyTarget: 3000,  bottleneckReason: '', history: [] },
+  { no: 17, name: '시험지접지기',     model: 'CSMO',         maker: 'HUNKELER',   status: 'IDLE', queue: 0,    queueCount: 0, inProgress: 0,    completed: 522,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 308,   stopReason: '',   dailyProduction: 1100,  dailyTarget: 2000,  bottleneckReason: '', history: [] },
+  { no: 18, name: '박스포장',         model: '',             maker: '',           status: 'RUN',   queue: 730,  queueCount: 1, inProgress: 297,  completed: 770,  jobProgress: 50, queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 7786,  stopReason: '',   dailyProduction: 1500,  dailyTarget: 1500,  bottleneckReason: '', history: [] },
+  { no: 19, name: '댐지포장',         model: '',             maker: '',           status: 'IDLE', queue: 0,    queueCount: 0, inProgress: 0,    completed: 646,  jobProgress: 0,  queueThreshold: DEFAULT_QUEUE_THRESHOLD, initialElapsedSeconds: 862,   stopReason: '',   dailyProduction: 1300,  dailyTarget: 1500,  bottleneckReason: '', history: [] },
 ];
 
 // ============================================
@@ -282,6 +283,35 @@ const DetailPanel: React.FC<{ process: ProcessData; onClose: () => void }> = ({ 
           </InfoRow>
         </div>
 
+        {/* 상태 변경 이력 (터미널 연동) */}
+        {process.history.length > 0 && (
+          <div className="px-5 pt-4 pb-2">
+            <h3 className="text-sm font-bold text-gray-200 mb-2">상태 변경 이력</h3>
+            <div className="space-y-1 max-h-40 overflow-y-auto">
+              {process.history.slice(0, 20).map((h, i) => {
+                const colorMap: Record<string, string> = {
+                  RUN: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+                  IDLE: 'bg-amber-400/15 text-amber-300 border-amber-400/30',
+                  STOP: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+                  SETUP: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+                };
+                const stopInfo = h.stopCode ? stopCodeNames[h.stopCode] : '';
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1.5 px-2 rounded bg-gray-900/40">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${colorMap[h.status] || colorMap.IDLE}`}>
+                      {h.status}
+                    </span>
+                    {h.stopCode && (
+                      <span className="text-[11px] text-rose-400">{h.stopCode} {stopInfo}</span>
+                    )}
+                    <span className="text-[11px] text-gray-500 ml-auto font-mono">{h.time}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="px-5 pt-5 pb-2">
           <h3 className="text-sm font-bold text-gray-200 mb-3">최근 7일 생산량</h3>
           <ResponsiveContainer width="100%" height={210}>
@@ -374,6 +404,7 @@ const ProcessFlowDiagram: React.FC = () => {
           status: fb.status,
           stopReason: fb.stopReason,
           initialElapsedSeconds: elapsed,
+          history: fb.history || [],
           queue: fb.status === 'IDLE' ? 0 : proc.queue,
           queueCount: fb.status === 'IDLE' ? 0 : proc.queueCount,
           inProgress: fb.status === 'RUN' ? proc.inProgress : 0,

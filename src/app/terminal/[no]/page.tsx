@@ -4,9 +4,9 @@
 import React, { useState, useEffect, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Play, Square, AlertTriangle, Settings, Clock, ChevronDown,
+  Play, Square, AlertTriangle, XCircle, Clock, ChevronDown,
 } from 'lucide-react';
-import { updateMachineStatus, subscribeMachine, MachineStatus } from '@/lib/machine-service';
+import { updateMachineStatus, subscribeMachine, MachineStatus, MachineHistoryEntry } from '@/lib/machine-service';
 
 type Status = MachineStatus;
 
@@ -40,17 +40,17 @@ const STOP_CODES = [
   { code: 'S9', name: '기타' },
 ];
 
-const STATUS_CONFIG: Record<Status, { label: string; bg: string; text: string; icon: React.ComponentType<{ className?: string }> }> = {
-  RUN:   { label: '가동',  bg: 'bg-emerald-500', text: 'text-white', icon: Play },
-  IDLE:  { label: '대기',  bg: 'bg-amber-400',   text: 'text-black', icon: Square },
-  STOP:  { label: '정지',  bg: 'bg-rose-500',    text: 'text-white', icon: AlertTriangle },
-  SETUP: { label: '셋업',  bg: 'bg-sky-500',     text: 'text-white', icon: Settings },
+// 터미널 버튼 설정 (SETUP → CANCEL 표시)
+const BTN_CONFIG: Record<Status, { label: string; korLabel: string; bg: string; text: string; icon: React.ComponentType<{ className?: string }>; activeClass: string; hoverClass: string }> = {
+  RUN:   { label: 'RUN',    korLabel: '가동', bg: 'bg-emerald-500', text: 'text-white', icon: Play,          activeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500 ring-2 ring-emerald-500/30', hoverClass: 'hover:border-emerald-500/60 hover:bg-emerald-950/30' },
+  IDLE:  { label: 'IDLE',   korLabel: '대기', bg: 'bg-amber-400',   text: 'text-black', icon: Square,        activeClass: 'bg-amber-400/20 text-amber-300 border-amber-400 ring-2 ring-amber-400/30',       hoverClass: 'hover:border-amber-400/60 hover:bg-amber-950/30' },
+  STOP:  { label: 'STOP',   korLabel: '정지', bg: 'bg-rose-500',    text: 'text-white', icon: AlertTriangle, activeClass: 'bg-rose-500/20 text-rose-300 border-rose-500 ring-2 ring-rose-500/30',           hoverClass: 'hover:border-rose-500/60 hover:bg-rose-950/30' },
+  SETUP: { label: 'CANCEL', korLabel: '취소', bg: 'bg-sky-500',     text: 'text-white', icon: XCircle,       activeClass: 'bg-sky-500/20 text-sky-300 border-sky-500 ring-2 ring-sky-500/30',               hoverClass: 'hover:border-sky-500/60 hover:bg-sky-950/30' },
 };
+
 const STATUS_BG: Record<Status, string> = {
   RUN: 'from-emerald-950/40', IDLE: 'from-amber-950/30', STOP: 'from-rose-950/40', SETUP: 'from-sky-950/30',
 };
-
-interface HistoryEntry { status: Status; stopCode?: string; time: string; }
 
 function formatTime(sec: number): string {
   const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
@@ -71,15 +71,14 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
   const [stopCode, setStopCode] = useState('');
   const [showStopModal, setShowStopModal] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [history, setHistory] = useState<MachineHistoryEntry[]>([]);
   const [connected, setConnected] = useState(false);
   const statusChangedAtRef = useRef<Date>(new Date());
 
-  // 실시간 타이머 (statusChangedAt 기준)
+  // 실시간 타이머
   useEffect(() => {
     const interval = setInterval(() => {
-      const diff = Math.floor((Date.now() - statusChangedAtRef.current.getTime()) / 1000);
-      setElapsed(diff);
+      setElapsed(Math.floor((Date.now() - statusChangedAtRef.current.getTime()) / 1000));
     }, 1000);
     return () => clearInterval(interval);
   }, []);
@@ -93,34 +92,38 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
         setStopCode(state.stopReason);
         statusChangedAtRef.current = state.statusChangedAt;
         setElapsed(Math.floor((Date.now() - state.statusChangedAt.getTime()) / 1000));
+        if (state.history.length > 0) setHistory(state.history);
       }
       setConnected(true);
     });
-    // localStorage에서 이력 복원
-    try {
-      const saved = localStorage.getItem(`terminal_history_${machineNo}`);
-      if (saved) setHistory(JSON.parse(saved));
-    } catch {}
     return unsub;
   }, [machineNo, machine]);
 
   // 상태 변경 → Firebase 저장
   const changeStatus = async (newStatus: Status, code?: string) => {
-    try {
-      await updateMachineStatus(machineNo, newStatus, code || '');
-    } catch (err) {
-      console.error('Firebase 저장 실패:', err);
-      // Firebase 실패 시 로컬에서라도 반영
-      setStatus(newStatus);
-      setStopCode(code || '');
+    const isStopAgain = newStatus === 'STOP' && status === 'STOP';
+    const entry: MachineHistoryEntry = {
+      status: newStatus,
+      stopCode: code || '',
+      time: nowStr(),
+      timestamp: Date.now(),
+    };
+    const newHistory = [entry, ...history].slice(0, 50);
+    setHistory(newHistory);
+
+    // STOP 재클릭 시 소요시간 리셋하지 않음 (정지 상태 유지, 코드만 추가)
+    if (!isStopAgain) {
       statusChangedAtRef.current = new Date();
       setElapsed(0);
     }
+    setStatus(newStatus);
+    setStopCode(code || '');
 
-    const entry: HistoryEntry = { status: newStatus, stopCode: code, time: nowStr() };
-    const newHistory = [entry, ...history].slice(0, 20);
-    setHistory(newHistory);
-    try { localStorage.setItem(`terminal_history_${machineNo}`, JSON.stringify(newHistory)); } catch {}
+    try {
+      await updateMachineStatus(machineNo, newStatus, code || '', newHistory);
+    } catch (err) {
+      console.error('Firebase 저장 실패:', err);
+    }
   };
 
   const handleStopSelect = (code: string) => {
@@ -136,7 +139,7 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
     );
   }
 
-  const cfg = STATUS_CONFIG[status];
+  const cfg = BTN_CONFIG[status];
   const StatusIcon = cfg.icon;
   const stopName = STOP_CODES.find((c) => c.code === stopCode)?.name || '';
 
@@ -155,7 +158,6 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
             </select>
             <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           </div>
-          {/* Firebase 연결 상태 */}
           <div className="flex items-center gap-1.5 mt-1.5 px-1">
             <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-green-500' : 'bg-gray-600 animate-pulse'}`} />
             <span className="text-[10px] text-gray-600">{connected ? 'Firebase 연결됨' : '연결 중...'}</span>
@@ -172,7 +174,7 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
         <div className={`rounded-2xl p-6 mb-6 text-center ${cfg.bg} shadow-lg`}>
           <div className="flex items-center justify-center gap-2 mb-2">
             <StatusIcon className={`w-6 h-6 ${cfg.text}`} />
-            <span className={`text-2xl font-bold ${cfg.text}`}>{cfg.label}</span>
+            <span className={`text-2xl font-bold ${cfg.text}`}>{cfg.korLabel}</span>
           </div>
           {status === 'STOP' && stopCode && (
             <p className={`text-sm ${cfg.text} opacity-80 mb-2`}>{stopCode} · {stopName}</p>
@@ -183,29 +185,27 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
           </div>
         </div>
 
-        {/* 4개 버튼 */}
+        {/* 4개 버튼 — STOP은 항상 클릭 가능 */}
         <div className="grid grid-cols-2 gap-3 mb-6">
           {(['RUN', 'IDLE', 'STOP', 'SETUP'] as Status[]).map((s) => {
-            const btnCfg = STATUS_CONFIG[s];
+            const btnCfg = BTN_CONFIG[s];
             const BtnIcon = btnCfg.icon;
             const isActive = status === s;
-            const colorMap: Record<Status, string> = {
-              RUN: isActive ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500 ring-2 ring-emerald-500/30' : 'hover:border-emerald-500/60 hover:bg-emerald-950/30',
-              IDLE: isActive ? 'bg-amber-400/20 text-amber-300 border-amber-400 ring-2 ring-amber-400/30' : 'hover:border-amber-400/60 hover:bg-amber-950/30',
-              STOP: isActive ? 'bg-rose-500/20 text-rose-300 border-rose-500 ring-2 ring-rose-500/30' : 'hover:border-rose-500/60 hover:bg-rose-950/30',
-              SETUP: isActive ? 'bg-sky-500/20 text-sky-300 border-sky-500 ring-2 ring-sky-500/30' : 'hover:border-sky-500/60 hover:bg-sky-950/30',
-            };
+            // STOP은 항상 활성 (여러 번 정지코드 입력 가능)
+            const isDisabled = s === 'STOP' ? false : isActive;
             return (
               <button key={s}
                 onClick={() => s === 'STOP' ? setShowStopModal(true) : changeStatus(s)}
-                disabled={isActive}
+                disabled={isDisabled}
                 className={`flex flex-col items-center justify-center gap-2 py-6 rounded-xl font-bold text-lg transition-all border-2 ${
-                  isActive ? colorMap[s] : `bg-gray-900 text-gray-300 border-gray-700 ${colorMap[s]} active:scale-95`
-                }`}
+                  isActive
+                    ? btnCfg.activeClass
+                    : `bg-gray-900 text-gray-300 border-gray-700 ${btnCfg.hoverClass} active:scale-95`
+                } ${isDisabled ? '' : 'cursor-pointer'}`}
               >
                 <BtnIcon className="w-8 h-8" />
-                <span>{s}</span>
-                <span className="text-[11px] font-normal opacity-60">{btnCfg.label}</span>
+                <span>{btnCfg.label}</span>
+                <span className="text-[11px] font-normal opacity-60">{btnCfg.korLabel}</span>
               </button>
             );
           })}
@@ -213,15 +213,17 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
 
         {/* 상태 변경 이력 */}
         <div className="flex-1">
-          <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-2 px-1">상태 변경 이력</h3>
+          <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-2 px-1">
+            상태 변경 이력 {history.length > 0 && <span className="text-gray-600">({history.length})</span>}
+          </h3>
           <div className="space-y-1.5">
             {history.length === 0 ? (
               <p className="text-sm text-gray-600 text-center py-4">아직 상태 변경 이력이 없습니다</p>
             ) : history.map((h, i) => {
-              const hCfg = STATUS_CONFIG[h.status];
+              const hCfg = BTN_CONFIG[h.status];
               return (
                 <div key={i} className="flex items-center gap-3 bg-gray-900/60 rounded-lg px-3 py-2.5 border border-gray-800/50">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${hCfg.bg} ${hCfg.text}`}>{h.status}</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${hCfg.bg} ${hCfg.text}`}>{hCfg.label}</span>
                   {h.stopCode && <span className="text-xs text-rose-400">{h.stopCode} {STOP_CODES.find(c=>c.code===h.stopCode)?.name}</span>}
                   <span className="text-xs text-gray-500 ml-auto font-mono">{h.time}</span>
                 </div>
@@ -237,6 +239,7 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
         <div className="fixed inset-x-4 top-1/2 -translate-y-1/2 z-70 max-w-md mx-auto bg-gray-950 rounded-2xl border border-gray-800 shadow-2xl overflow-hidden">
           <div className="p-4 border-b border-gray-800">
             <h3 className="text-lg font-bold text-gray-100 flex items-center gap-2"><AlertTriangle className="w-5 h-5 text-rose-400" />정지 사유 선택</h3>
+            {status === 'STOP' && <p className="text-xs text-amber-400 mt-1">현재 정지 중 — 추가 정지 사유를 기록합니다</p>}
           </div>
           <div className="p-2 max-h-80 overflow-y-auto">
             {STOP_CODES.map((sc) => (

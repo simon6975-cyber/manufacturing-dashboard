@@ -45,7 +45,7 @@ const BTN_CONFIG: Record<Status, { label: string; korLabel: string; bg: string; 
   RUN:   { label: 'RUN',    korLabel: '가동', bg: 'bg-emerald-500', text: 'text-white', icon: Play,          activeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500 ring-2 ring-emerald-500/30', hoverClass: 'hover:border-emerald-500/60 hover:bg-emerald-950/30' },
   IDLE:  { label: 'IDLE',   korLabel: '대기', bg: 'bg-amber-400',   text: 'text-black', icon: Square,        activeClass: 'bg-amber-400/20 text-amber-300 border-amber-400 ring-2 ring-amber-400/30',       hoverClass: 'hover:border-amber-400/60 hover:bg-amber-950/30' },
   STOP:  { label: 'STOP',   korLabel: '정지', bg: 'bg-rose-500',    text: 'text-white', icon: AlertTriangle, activeClass: 'bg-rose-500/20 text-rose-300 border-rose-500 ring-2 ring-rose-500/30',           hoverClass: 'hover:border-rose-500/60 hover:bg-rose-950/30' },
-  SETUP: { label: 'CANCEL', korLabel: '취소', bg: 'bg-sky-500',     text: 'text-white', icon: XCircle,       activeClass: 'bg-sky-500/20 text-sky-300 border-sky-500 ring-2 ring-sky-500/30',               hoverClass: 'hover:border-sky-500/60 hover:bg-sky-950/30' },
+  SETUP: { label: 'CANCEL', korLabel: '취소', bg: 'bg-sky-500',     text: 'text-white', icon: Square,        activeClass: 'bg-sky-500/20 text-sky-300 border-sky-500 ring-2 ring-sky-500/30',               hoverClass: 'hover:border-sky-500/60 hover:bg-sky-950/30' },
 };
 
 const STATUS_BG: Record<Status, string> = {

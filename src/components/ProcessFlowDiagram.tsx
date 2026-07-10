@@ -133,30 +133,26 @@ const ProcessCard: React.FC<{ process:ProcessData; onSelect?:(no:number)=>void }
 };
 
 // ============================================
-// 장비군 컴포넌트 (대기물량/건수 헤더 포함)
+// 장비군 컴포넌트 (세로 배열, 콤팩트)
 // ============================================
 const EquipmentGroupComp: React.FC<{
   group: typeof EQUIPMENT_GROUPS[0]; machineMap: Record<number,ProcessData>; onSelect:(no:number)=>void;
 }> = ({ group, machineMap, onSelect }) => {
   const machines = group.machines.map(no=>machineMap[no]).filter(Boolean);
-  const totalQueue = machines.reduce((s,m)=>{
-    const ds=toDisplay(m.status); return s+(ds==='IDLE'?0:m.queue);
-  },0);
-  const totalQueueCount = machines.reduce((s,m)=>{
-    const ds=toDisplay(m.status); return s+(ds==='IDLE'?0:m.queueCount);
-  },0);
+  const totalQueue = machines.reduce((s,m)=>{ const ds=toDisplay(m.status); return s+(ds==='IDLE'?0:m.queue); },0);
+  const totalQueueCount = machines.reduce((s,m)=>{ const ds=toDisplay(m.status); return s+(ds==='IDLE'?0:m.queueCount); },0);
   const isOverloaded = totalQueue >= DEFAULT_QUEUE_THRESHOLD;
 
   return (
-    <div className="mb-3 last:mb-0">
-      <div className={`flex items-center justify-between px-2 py-1.5 rounded-t-md border border-b-0 border-gray-700/50 bg-gray-900/80 ${isOverloaded?'animate-overload-box':''}`}>
-        <span className="text-[11px] font-bold text-gray-300">{group.name}</span>
-        <div className="flex items-center gap-3 text-[10px]">
-          <span className="text-amber-300">대기물량 <span className="font-bold font-mono">{totalQueue.toLocaleString()}</span></span>
-          <span className="text-sky-300">대기건수 <span className="font-bold font-mono">{totalQueueCount}</span></span>
+    <div className="w-[135px] shrink-0">
+      <div className={`px-1.5 py-1 rounded-t border border-b-0 border-gray-700/50 bg-gray-900/80 ${isOverloaded?'animate-overload-box':''}`}>
+        <p className="text-[10px] font-bold text-gray-300 truncate">{group.name}</p>
+        <div className="flex items-center gap-2 text-[9px] mt-0.5">
+          <span className="text-amber-300">물량 <span className="font-bold font-mono">{totalQueue.toLocaleString()}</span></span>
+          <span className="text-sky-300">건수 <span className="font-bold font-mono">{totalQueueCount}</span></span>
         </div>
       </div>
-      <div className={`grid gap-1.5 p-1.5 rounded-b-md border border-t-0 border-gray-700/50 bg-gray-950/40 ${machines.length>=3?'grid-cols-3':machines.length===2?'grid-cols-2':'grid-cols-1'}`}>
+      <div className="grid grid-cols-1 gap-1 p-1 rounded-b border border-t-0 border-gray-700/50 bg-gray-950/40">
         {machines.map(m=><ProcessCard key={m.no} process={m} onSelect={onSelect}/>)}
       </div>
     </div>
@@ -304,8 +300,16 @@ const ProcessFlowDiagram: React.FC = () => {
 
   useEffect(()=>{ const h=(e:KeyboardEvent)=>{if(e.key==='Escape')setSelectedNo(null);}; window.addEventListener('keydown',h); return()=>window.removeEventListener('keydown',h); },[]);
 
-  // 공정군별 장비군 분류
-  const getGroups = (pg:string) => EQUIPMENT_GROUPS.filter(g=>g.processGroup===pg);
+  // 장비군 ID로 렌더링하는 숏컷
+  const groupMap = useMemo(()=>{
+    const m: Record<string, typeof EQUIPMENT_GROUPS[0]> = {};
+    EQUIPMENT_GROUPS.forEach(g=>{ m[g.id]=g; });
+    return m;
+  },[]);
+  const EG = ({id}:{id:string}) => {
+    const g = groupMap[id];
+    return g ? <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo}/> : null;
+  };
 
   return (
     <div className="flex flex-col gap-4 p-5 bg-black min-h-full">
@@ -326,27 +330,48 @@ const ProcessFlowDiagram: React.FC = () => {
         <StatusCount icon={AlertCircle} label="정지" count={statusCounts.STOP} color="rose" pulse/>
       </div>
 
-      {/* 메인 흐름도 */}
-      <div className="flex-1 grid grid-cols-1 xl:grid-cols-[1fr_auto_0.55fr_auto_0.2fr] gap-3 items-start">
-        <div className="flex flex-col gap-3 min-w-0">
-          <GroupBox title="내지" titleColor="text-sky-300">
-            {getGroups('내지').map(g=><EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo}/>)}
-          </GroupBox>
-          <GroupBox title="표지" titleColor="text-pink-300">
-            {getGroups('표지').map(g=><EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo}/>)}
-          </GroupBox>
-        </div>
-        <div className="hidden xl:flex items-center justify-center self-center"><Arrow size="lg"/></div>
-        <div className="min-w-0">
-          <GroupBox title="제본" titleColor="text-sky-300" className="h-full">
-            {getGroups('제본').map(g=><EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo}/>)}
-          </GroupBox>
-        </div>
-        <div className="hidden xl:flex items-center justify-center self-center"><Arrow size="lg"/></div>
-        <div className="min-w-0">
-          <GroupBox title="포장" titleColor="text-cyan-300" className="h-full">
-            {getGroups('포장').map(g=><EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo}/>)}
-          </GroupBox>
+      {/* 메인 흐름도 — 가로 공정 순서 */}
+      <div className="flex-1 overflow-x-auto pb-2">
+        <div className="flex items-stretch gap-0 min-w-max">
+
+          {/* 내지 + 표지 (병렬) */}
+          <div className="flex flex-col gap-2 shrink-0">
+            {/* Row 1: 내지 */}
+            <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2">
+              <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-sky-300">내지</span>
+              <div className="flex items-start gap-1.5">
+                <EG id="continuous"/><Arrow/><EG id="r2c"/>
+              </div>
+            </div>
+            {/* Row 2: 표지 */}
+            <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2">
+              <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-pink-300">표지</span>
+              <div className="flex items-start gap-1.5">
+                <EG id="sheet"/><Arrow/><EG id="coating"/><Arrow/><EG id="epoxy"/><Arrow/><EG id="cutting"/>
+              </div>
+            </div>
+          </div>
+
+          <Arrow size="lg"/>
+
+          {/* 제본 */}
+          <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2 shrink-0">
+            <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-sky-300">제본</span>
+            <div className="flex items-start gap-1.5">
+              <EG id="binding"/><EG id="saddle"/><EG id="wing"/><EG id="exam"/>
+            </div>
+          </div>
+
+          <Arrow size="lg"/>
+
+          {/* 포장 */}
+          <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2 shrink-0">
+            <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-cyan-300">포장</span>
+            <div className="flex items-start gap-1.5">
+              <EG id="box"/><EG id="pallet"/>
+            </div>
+          </div>
+
         </div>
       </div>
 

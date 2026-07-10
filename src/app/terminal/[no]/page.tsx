@@ -190,12 +190,14 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
           {(['RUN', 'IDLE', 'STOP', 'SETUP'] as Status[]).map((s) => {
             const btnCfg = BTN_CONFIG[s];
             const BtnIcon = btnCfg.icon;
-            const isActive = status === s;
+            const isActive = status === s || (s === 'SETUP' && status === 'IDLE');
             // STOP은 항상 활성 (여러 번 정지코드 입력 가능)
             const isDisabled = s === 'STOP' ? false : isActive;
+            // CANCEL(SETUP)은 IDLE 상태로 전송
+            const targetStatus: Status = s === 'SETUP' ? 'IDLE' : s;
             return (
               <button key={s}
-                onClick={() => s === 'STOP' ? setShowStopModal(true) : changeStatus(s)}
+                onClick={() => s === 'STOP' ? setShowStopModal(true) : changeStatus(targetStatus)}
                 disabled={isDisabled}
                 className={`flex flex-col items-center justify-center gap-2 py-6 rounded-xl font-bold text-lg transition-all border-2 ${
                   isActive

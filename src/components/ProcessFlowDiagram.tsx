@@ -144,11 +144,11 @@ const EquipmentGroupComp: React.FC<{
   const isOverloaded = totalQueue >= DEFAULT_QUEUE_THRESHOLD;
 
   return (
-    <div className="w-[135px] shrink-0">
+    <div className="min-w-[170px] shrink-0">
       <div className={`px-1.5 py-1 rounded-t border border-b-0 border-gray-700/50 bg-gray-900/80 ${isOverloaded?'animate-overload-box':''}`}>
         <p className="text-[10px] font-bold text-gray-300 truncate">{group.name}</p>
         <div className="flex items-center gap-2 text-[9px] mt-0.5">
-          <span className="text-amber-300">물량 <span className="font-bold font-mono">{totalQueue.toLocaleString()}</span></span>
+          <span className="text-amber-300">대기물량 <span className="font-bold font-mono">{totalQueue.toLocaleString()}</span></span>
           <span className="text-sky-300">건수 <span className="font-bold font-mono">{totalQueueCount}</span></span>
         </div>
       </div>
@@ -332,10 +332,10 @@ const ProcessFlowDiagram: React.FC = () => {
 
       {/* 메인 흐름도 — 가로 공정 순서 */}
       <div className="flex-1 overflow-x-auto pb-2 pt-1">
-        <div className="flex items-start gap-0 min-w-max mt-2">
+        <div className="flex items-start gap-0 mt-2">
 
           {/* 내지 + 표지 (병렬) */}
-          <div className="flex flex-col gap-2 shrink-0">
+          <div className="flex flex-col gap-2 shrink-0 flex-1 min-w-0">
             {/* Row 1: 내지 */}
             <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2">
               <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-sky-300">내지</span>

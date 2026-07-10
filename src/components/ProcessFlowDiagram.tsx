@@ -331,8 +331,8 @@ const ProcessFlowDiagram: React.FC = () => {
       </div>
 
       {/* 메인 흐름도 — 가로 공정 순서 */}
-      <div className="flex-1 overflow-x-auto pb-2">
-        <div className="flex items-stretch gap-0 min-w-max">
+      <div className="flex-1 overflow-x-auto pb-2 pt-1">
+        <div className="flex items-start gap-0 min-w-max mt-2">
 
           {/* 내지 + 표지 (병렬) */}
           <div className="flex flex-col gap-2 shrink-0">
@@ -357,7 +357,7 @@ const ProcessFlowDiagram: React.FC = () => {
           {/* 제본 */}
           <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2 shrink-0">
             <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-sky-300">제본</span>
-            <div className="flex items-start gap-1.5">
+            <div className="flex flex-col gap-1.5">
               <EG id="binding"/><EG id="saddle"/><EG id="wing"/><EG id="exam"/>
             </div>
           </div>
@@ -367,7 +367,7 @@ const ProcessFlowDiagram: React.FC = () => {
           {/* 포장 */}
           <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2 shrink-0">
             <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-cyan-300">포장</span>
-            <div className="flex items-start gap-1.5">
+            <div className="flex flex-col gap-1.5">
               <EG id="box"/><EG id="pallet"/>
             </div>
           </div>

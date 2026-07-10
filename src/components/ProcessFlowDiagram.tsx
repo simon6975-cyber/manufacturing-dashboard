@@ -335,7 +335,7 @@ const ProcessFlowDiagram: React.FC = () => {
         <div className="flex items-start gap-0 mt-2">
 
           {/* 내지 + 표지 (병렬) */}
-          <div className="flex flex-col gap-2 shrink-0 flex-1 min-w-0">
+          <div className="flex flex-col gap-2 shrink-0">
             {/* Row 1: 내지 */}
             <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2">
               <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-sky-300">내지</span>

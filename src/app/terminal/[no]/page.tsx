@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Play, Square, AlertTriangle, XCircle, Clock, ChevronDown,
+  Play, Square, AlertTriangle, Clock, ChevronDown,
 } from 'lucide-react';
 import { updateMachineStatus, subscribeMachine, MachineStatus, MachineHistoryEntry } from '@/lib/machine-service';
 
@@ -185,32 +185,40 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
           </div>
         </div>
 
-        {/* 4개 버튼 — STOP은 항상 클릭 가능 */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
-          {(['RUN', 'IDLE', 'STOP', 'SETUP'] as Status[]).map((s) => {
-            const btnCfg = BTN_CONFIG[s];
-            const BtnIcon = btnCfg.icon;
-            const isActive = status === s || (s === 'SETUP' && status === 'IDLE');
-            // STOP은 항상 활성 (여러 번 정지코드 입력 가능)
-            const isDisabled = s === 'STOP' ? false : isActive;
-            // CANCEL(SETUP)은 IDLE 상태로 전송
-            const targetStatus: Status = s === 'SETUP' ? 'IDLE' : s;
-            return (
-              <button key={s}
-                onClick={() => s === 'STOP' ? setShowStopModal(true) : changeStatus(targetStatus)}
-                disabled={isDisabled}
-                className={`flex flex-col items-center justify-center gap-2 py-6 rounded-xl font-bold text-lg transition-all border-2 ${
-                  isActive
-                    ? btnCfg.activeClass
-                    : `bg-gray-900 text-gray-300 border-gray-700 ${btnCfg.hoverClass} active:scale-95`
-                } ${isDisabled ? '' : 'cursor-pointer'}`}
-              >
-                <BtnIcon className="w-8 h-8" />
-                <span>{btnCfg.label}</span>
-                <span className="text-[11px] font-normal opacity-60">{btnCfg.korLabel}</span>
-              </button>
-            );
-          })}
+        {/* 3개 버튼: RUN | IDLE (상단), STOP (하단 풀사이즈) */}
+        <div className="mb-6 space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            {(['RUN', 'IDLE'] as Status[]).map((s) => {
+              const btnCfg = BTN_CONFIG[s];
+              const BtnIcon = btnCfg.icon;
+              const isActive = status === s;
+              return (
+                <button key={s}
+                  onClick={() => changeStatus(s)}
+                  disabled={isActive}
+                  className={`flex flex-col items-center justify-center gap-2 py-6 rounded-xl font-bold text-lg transition-all border-2 ${
+                    isActive ? btnCfg.activeClass : `bg-gray-900 text-gray-300 border-gray-700 ${btnCfg.hoverClass} active:scale-95`
+                  }`}
+                >
+                  <BtnIcon className="w-8 h-8" />
+                  <span>{btnCfg.label}</span>
+                  <span className="text-[11px] font-normal opacity-60">{btnCfg.korLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+          <button
+            onClick={() => setShowStopModal(true)}
+            className={`w-full flex items-center justify-center gap-3 py-6 rounded-xl font-bold text-lg transition-all border-2 ${
+              status === 'STOP'
+                ? BTN_CONFIG.STOP.activeClass
+                : `bg-gray-900 text-gray-300 border-gray-700 ${BTN_CONFIG.STOP.hoverClass} active:scale-95`
+            }`}
+          >
+            <AlertTriangle className="w-8 h-8" />
+            <span>STOP</span>
+            <span className="text-[11px] font-normal opacity-60">정지</span>
+          </button>
         </div>
 
         {/* 상태 변경 이력 */}

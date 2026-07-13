@@ -136,12 +136,23 @@ const ProcessCard: React.FC<{ process:ProcessData; onSelect?:(no:number)=>void }
 // 장비군 컴포넌트 (세로 배열, 콤팩트)
 // ============================================
 const EquipmentGroupComp: React.FC<{
-  group: typeof EQUIPMENT_GROUPS[0]; machineMap: Record<number,ProcessData>; onSelect:(no:number)=>void;
-}> = ({ group, machineMap, onSelect }) => {
+  group: typeof EQUIPMENT_GROUPS[0]; machineMap: Record<number,ProcessData>; onSelect:(no:number)=>void; now:number;
+}> = ({ group, machineMap, onSelect, now }) => {
   const machines = group.machines.map(no=>machineMap[no]).filter(Boolean);
   const totalQueue = machines.reduce((s,m)=>{ const ds=toDisplay(m.status); return s+(ds==='IDLE'?0:m.queue); },0);
   const totalQueueCount = machines.reduce((s,m)=>{ const ds=toDisplay(m.status); return s+(ds==='IDLE'?0:m.queueCount); },0);
   const isOverloaded = totalQueue >= DEFAULT_QUEUE_THRESHOLD;
+
+  // 초과 시작 시각 추적 (초과 해소 시 리셋)
+  const overloadStartRef = useRef<number|null>(null);
+  if (isOverloaded && overloadStartRef.current === null) {
+    overloadStartRef.current = Date.now();
+  } else if (!isOverloaded && overloadStartRef.current !== null) {
+    overloadStartRef.current = null;
+  }
+  const overloadSeconds = overloadStartRef.current !== null
+    ? Math.max(0, Math.floor((now - overloadStartRef.current) / 1000))
+    : 0;
 
   return (
     <div className="min-w-[170px] shrink-0">
@@ -151,6 +162,15 @@ const EquipmentGroupComp: React.FC<{
           <span className="text-amber-300">대기물량 <span className="font-bold font-mono">{totalQueue.toLocaleString()}</span></span>
           <span className="text-sky-300">건수 <span className="font-bold font-mono">{totalQueueCount}</span></span>
         </div>
+        {isOverloaded && (
+          <div className="flex items-center gap-1 mt-1 pt-1 border-t border-amber-500/20">
+            <AlertTriangle className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+            <span className="text-[8px] text-amber-400/80">초과</span>
+            <span className="text-[10px] font-bold text-amber-300 font-mono tabular-nums ml-auto">
+              {formatElapsed(overloadSeconds)}
+            </span>
+          </div>
+        )}
       </div>
       <div className="grid grid-cols-1 gap-1 p-1 rounded-b border border-t-0 border-gray-700/50 bg-gray-950/40">
         {machines.map(m=><ProcessCard key={m.no} process={m} onSelect={onSelect}/>)}
@@ -287,6 +307,18 @@ const ProcessFlowDiagram: React.FC = () => {
     return c;
   },[p]);
 
+  // 대기물량 초과 장비군 수
+  const overloadedGroups = useMemo(()=>{
+    return EQUIPMENT_GROUPS.filter(g=>{
+      const total = g.machines.reduce((s,no)=>{
+        const m = p[no];
+        if(!m) return s;
+        return s + (toDisplay(m.status)==='IDLE' ? 0 : m.queue);
+      },0);
+      return total >= DEFAULT_QUEUE_THRESHOLD;
+    }).length;
+  },[p]);
+
   const totals = useMemo(()=>{
     let queue=0,queueCount=0,completed=0;
     Object.values(p).forEach(proc=>{
@@ -308,7 +340,7 @@ const ProcessFlowDiagram: React.FC = () => {
   },[]);
   const EG = ({id}:{id:string}) => {
     const g = groupMap[id];
-    return g ? <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo}/> : null;
+    return g ? <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now}/> : null;
   };
 
   return (
@@ -316,7 +348,14 @@ const ProcessFlowDiagram: React.FC = () => {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-100">제작공정 흐름도</h2>
-          <p className="text-xs text-gray-500 mt-1">내지 · 표지 (병렬) → 제본 → 포장 · 실시간 상태 모니터링</p>
+          <p className="text-xs text-gray-500 mt-1">
+            내지 · 표지 (병렬) → 제본 → 포장 · 실시간 상태 모니터링
+            {overloadedGroups > 0 && (
+              <span className="ml-2 text-amber-400 font-medium">
+                • 대기물량 초과 {overloadedGroups}개 장비군 (기준 {DEFAULT_QUEUE_THRESHOLD.toLocaleString()})
+              </span>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-1.5 text-[11px]">
           <Legend color="emerald" label="RUN"/><Legend color="amber" label="IDLE"/><Legend color="rose" label="STOP" pulse/>

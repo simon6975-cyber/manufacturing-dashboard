@@ -15,10 +15,11 @@ import {
   FileText,
   SlidersHorizontal,
   ListChecks,
+  Wrench,
   FileSpreadsheet,
 } from 'lucide-react';
 
-const APP_VERSION = 'v2.5.9';
+const APP_VERSION = 'v2.6.0';
 
 type NavItem = {
   href: string;
@@ -58,6 +59,7 @@ const sections: { title: string; items: NavItem[] }[] = [
     title: '설정',
     items: [
       { href: '/codes', label: '정지/병목코드', icon: ListChecks },
+      { href: '/settings/machines', label: '장비 관리', icon: Wrench },
       { href: '/sheets', label: '시트 연결', icon: FileSpreadsheet },
     ],
   },

@@ -7,6 +7,7 @@ import {
   Play, Square, AlertTriangle, Clock, ChevronDown,
 } from 'lucide-react';
 import { updateMachineStatus, subscribeMachine, MachineStatus, MachineHistoryEntry } from '@/lib/machine-service';
+import { useMachineDefs, DEFAULT_MACHINES } from '@/lib/machine-defs';
 
 type Status = MachineStatus;
 
@@ -64,7 +65,8 @@ function nowStr(): string {
 export default function TerminalPage({ params }: { params: Promise<{ no: string }> }) {
   const { no: noStr } = use(params);
   const machineNo = parseInt(noStr, 10);
-  const machine = MACHINES[machineNo];
+  const { defs: machineDefs } = useMachineDefs();
+  const machine = machineDefs[machineNo];
   const router = useRouter();
 
   const [status, setStatus] = useState<Status>('IDLE');
@@ -152,8 +154,8 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
           <div className="relative">
             <select value={machineNo} onChange={(e) => router.push(`/terminal/${e.target.value}`)}
               className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-200 outline-none appearance-none focus:border-blue-500/50">
-              {Object.entries(MACHINES).map(([no, m]) => (
-                <option key={no} value={no} className="bg-gray-900">[{m.group}] NO.{String(no).padStart(2,'0')} {m.name}</option>
+              {Object.values(machineDefs).sort((a,b)=>a.no-b.no).map((m) => (
+                <option key={m.no} value={m.no} className="bg-gray-900">[{m.group}] NO.{String(m.no).padStart(2,'0')} {m.name}</option>
               ))}
             </select>
             <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />

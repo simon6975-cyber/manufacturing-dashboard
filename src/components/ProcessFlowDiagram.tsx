@@ -5,6 +5,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts';
 import { Play, Pause, AlertCircle, ChevronRight, RefreshCw, AlertTriangle, X, Clock } from 'lucide-react';
 import { subscribeMachines, MachineState, MachineHistoryEntry } from '@/lib/machine-service';
+import { useMachineDefs, MachineDef } from '@/lib/machine-defs';
 
 type Status = 'RUN' | 'IDLE' | 'STOP' | 'SETUP';
 type DisplayStatus = 'RUN' | 'IDLE' | 'STOP';
@@ -279,6 +280,7 @@ const ProcessFlowDiagram: React.FC = () => {
   const [now, setNow] = useState(Date.now());
   const mountTimeRef = useRef(Date.now());
   const [firebaseStates, setFirebaseStates] = useState<Record<number,MachineState>>({});
+  const { defs: machineDefs } = useMachineDefs();
 
   useEffect(()=>{ const i=setInterval(()=>setNow(Date.now()),1000); return()=>clearInterval(i); },[]);
   useEffect(()=>{ const u=subscribeMachines(s=>setFirebaseStates(s)); return u; },[]);
@@ -287,18 +289,21 @@ const ProcessFlowDiagram: React.FC = () => {
     const map: Record<number,ProcessData> = {};
     processes.forEach(proc=>{
       const fb = firebaseStates[proc.no];
+      const def = machineDefs[proc.no];
+      // 장비 정의 병합 (Firebase 설정 > 기본값)
+      const base = def ? { ...proc, name: def.name, model: def.model, maker: def.maker } : proc;
       if(fb){
         const elapsed = Math.max(0,Math.floor((now-fb.statusChangedAt.getTime())/1000));
-        map[proc.no] = {...proc, status:fb.status, stopReason:fb.stopReason, initialElapsedSeconds:elapsed, history:fb.history||[],
-          queue:toDisplay(fb.status)==='IDLE'?0:proc.queue, queueCount:toDisplay(fb.status)==='IDLE'?0:proc.queueCount,
-          inProgress:toDisplay(fb.status)==='RUN'?proc.inProgress:0, jobProgress:toDisplay(fb.status)==='RUN'?proc.jobProgress:0 };
+        map[proc.no] = {...base, status:fb.status, stopReason:fb.stopReason, initialElapsedSeconds:elapsed, history:fb.history||[],
+          queue:toDisplay(fb.status)==='IDLE'?0:base.queue, queueCount:toDisplay(fb.status)==='IDLE'?0:base.queueCount,
+          inProgress:toDisplay(fb.status)==='RUN'?base.inProgress:0, jobProgress:toDisplay(fb.status)==='RUN'?base.jobProgress:0 };
       } else {
-        const elapsed = proc.initialElapsedSeconds+Math.floor((now-mountTimeRef.current)/1000);
-        map[proc.no] = {...proc, initialElapsedSeconds:elapsed};
+        const elapsed = base.initialElapsedSeconds+Math.floor((now-mountTimeRef.current)/1000);
+        map[proc.no] = {...base, initialElapsedSeconds:elapsed};
       }
     });
     return map;
-  },[firebaseStates,now]);
+  },[firebaseStates,now,machineDefs]);
 
   // 3상태 카운트
   const statusCounts = useMemo(()=>{

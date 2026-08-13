@@ -92,6 +92,7 @@ function getAchievementRate(m:number,t:number) { return t<=0?0:Math.round((m/(t*
 // 장비 카드 (대기물량 제거, 진행률+소요시간만)
 // ============================================
 const ProcessCard: React.FC<{ process:ProcessData; onSelect?:(no:number)=>void }> = ({ process, onSelect }) => {
+  const { codeMap: stopCodeNames } = useStopCodes();
   const ds = toDisplay(process.status);
   const cfg = statusConfig[ds];
   const StatusIcon = cfg.icon;
@@ -184,6 +185,7 @@ const InfoRow: React.FC<{label:string;children:React.ReactNode}> = ({label,child
   <div className="flex items-center justify-between py-3.5"><span className="text-sm text-gray-400">{label}</span><span className="text-sm">{children}</span></div>
 );
 const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> = ({process,onClose,now}) => {
+  const { codeMap: stopCodeNames } = useStopCodes();
   const ds = toDisplay(process.status);
   const last7 = useMemo(()=>getLast7Days(process.dailyProduction,process.no),[process]);
   const monthly = useMemo(()=>getMonthlyTotal(process.dailyProduction,process.no),[process]);
@@ -278,7 +280,6 @@ const ProcessFlowDiagram: React.FC = () => {
   const mountTimeRef = useRef(Date.now());
   const [firebaseStates, setFirebaseStates] = useState<Record<number,MachineState>>({});
   const { defs: machineDefs } = useMachineDefs();
-  const { codeMap: stopCodeNames } = useStopCodes();
 
   useEffect(()=>{ const i=setInterval(()=>setNow(Date.now()),1000); return()=>clearInterval(i); },[]);
   useEffect(()=>{ const u=subscribeMachines(s=>setFirebaseStates(s)); return u; },[]);

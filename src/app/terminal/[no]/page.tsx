@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { updateMachineStatus, subscribeMachine, MachineStatus, MachineHistoryEntry } from '@/lib/machine-service';
 import { useMachineDefs, DEFAULT_MACHINES } from '@/lib/machine-defs';
+import { useStopCodes } from '@/lib/useStopCodes';
 
 type Status = MachineStatus;
 
@@ -66,6 +67,7 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
   const { no: noStr } = use(params);
   const machineNo = parseInt(noStr, 10);
   const { defs: machineDefs } = useMachineDefs();
+  const { codes: stopCodesLive, codeMap: stopCodeMap } = useStopCodes();
   const machine = machineDefs[machineNo];
   const router = useRouter();
 
@@ -143,7 +145,7 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
 
   const cfg = BTN_CONFIG[status];
   const StatusIcon = cfg.icon;
-  const stopName = STOP_CODES.find((c) => c.code === stopCode)?.name || '';
+  const stopName = stopCodeMap[stopCode] || '';
 
   return (
     <div className={`fixed inset-0 z-50 bg-gradient-to-b ${STATUS_BG[status]} to-black overflow-y-auto`}>
@@ -236,7 +238,7 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
               return (
                 <div key={i} className="flex items-center gap-3 bg-gray-900/60 rounded-lg px-3 py-2.5 border border-gray-800/50">
                   <span className={`text-xs font-bold px-2 py-0.5 rounded ${hCfg.bg} ${hCfg.text}`}>{hCfg.label}</span>
-                  {h.stopCode && <span className="text-xs text-rose-400">{h.stopCode} {STOP_CODES.find(c=>c.code===h.stopCode)?.name}</span>}
+                  {h.stopCode && <span className="text-xs text-rose-400">{h.stopCode} {stopCodeMap[h.stopCode]}</span>}
                   <span className="text-xs text-gray-500 ml-auto font-mono">{h.time}</span>
                 </div>
               );
@@ -254,7 +256,7 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
             {status === 'STOP' && <p className="text-xs text-amber-400 mt-1">현재 정지 중 — 추가 정지 사유를 기록합니다</p>}
           </div>
           <div className="p-2 max-h-80 overflow-y-auto">
-            {STOP_CODES.map((sc) => (
+            {stopCodesLive.filter(c=>c.active).map((sc) => (
               <button key={sc.code} onClick={() => handleStopSelect(sc.code)}
                 className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl hover:bg-rose-950/30 transition-colors text-left">
                 <span className="text-sm font-bold text-rose-400 font-mono w-8">{sc.code}</span>

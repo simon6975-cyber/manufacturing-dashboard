@@ -6,6 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 
 import { Play, Pause, AlertCircle, ChevronRight, RefreshCw, AlertTriangle, X, Clock } from 'lucide-react';
 import { subscribeMachines, MachineState, MachineHistoryEntry } from '@/lib/machine-service';
 import { useMachineDefs, MachineDef } from '@/lib/machine-defs';
+import { useStopCodes } from '@/lib/useStopCodes';
 
 type Status = 'RUN' | 'IDLE' | 'STOP' | 'SETUP';
 type DisplayStatus = 'RUN' | 'IDLE' | 'STOP';
@@ -23,10 +24,6 @@ interface ProcessData {
 
 const DEFAULT_QUEUE_THRESHOLD = 5000;
 
-const stopCodeNames: Record<string, string> = {
-  S1:'장비 셋팅',S2:'자재 준비',S3:'작업 준비',S4:'검수',S5:'예방 정비',
-  S6:'설비 장애',S7:'작업 중단',S8:'인력 부재',S9:'기타',
-};
 
 // ============================================
 // 장비군 정의
@@ -281,6 +278,7 @@ const ProcessFlowDiagram: React.FC = () => {
   const mountTimeRef = useRef(Date.now());
   const [firebaseStates, setFirebaseStates] = useState<Record<number,MachineState>>({});
   const { defs: machineDefs } = useMachineDefs();
+  const { codeMap: stopCodeNames } = useStopCodes();
 
   useEffect(()=>{ const i=setInterval(()=>setNow(Date.now()),1000); return()=>clearInterval(i); },[]);
   useEffect(()=>{ const u=subscribeMachines(s=>setFirebaseStates(s)); return u; },[]);

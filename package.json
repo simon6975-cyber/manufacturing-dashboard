@@ -1,32 +1,14 @@
 {
-  "name": "podcenter-dashboard",
-  "version": "2.2.0",
+  "name": "dspm-local-sync",
+  "version": "1.0.0",
   "private": true,
+  "description": "사내망에서 DSPM 실측 설비상태 API를 읽어 Firestore(machines/*)에 반영하는 로컬 동기화 스크립트. Windows 작업 스케줄러로 주기 실행한다.",
+  "main": "sync.js",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "sync": "node sync.js"
   },
   "dependencies": {
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
-    "firebase": "^12.14.0",
-    "lucide-react": "^1.17.0",
-    "next": "16.2.9",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
-    "recharts": "^3.8.1",
-    "xlsx": "^0.18.5"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.9",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "dotenv": "^16.4.5",
+    "firebase": "^12.14.0"
   }
 }

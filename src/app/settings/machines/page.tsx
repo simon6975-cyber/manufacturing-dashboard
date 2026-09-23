@@ -2,7 +2,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Save, Loader2, RotateCcw, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Save, Loader2, RotateCcw, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { db } from '@/lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { useMachineDefs, saveMachineDefs, DEFAULT_MACHINES, MachineDef } from '@/lib/machine-defs';
 import type { DspmMachineState } from '@/lib/machine-sync';
 
@@ -14,28 +16,27 @@ export default function MachineSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // 실측 DSPM 설비 목록(참고/매핑용) — 같은 오리진 프록시(/api/dspm/state)를 통해 가져온다.
-  // (대시보드가 https라 브라우저에서 http 실측 API를 직접 fetch하면 Mixed Content로 막힌다)
+  // 실측 DSPM 설비 목록(참고/매핑용).
+  // Vercel 서버는 사내망(dspm.dsjs.co.kr:10920)에 방화벽 때문에 직접 못 붙는다 —
+  // 대신 사내 PC에서 도는 dspm-local-sync 스크립트가 매번 Firestore(dspm_live/snapshot)에
+  // 최신 스냅샷을 남기고, 여기서는 그 문서를 실시간 구독만 한다.
   const [live, setLive] = useState<DspmMachineState[]>([]);
-  const [liveLoading, setLiveLoading] = useState(false);
-  const [liveError, setLiveError] = useState('');
+  const [liveFetchedAt, setLiveFetchedAt] = useState<string>('');
+  const [liveMissing, setLiveMissing] = useState(false);
 
-  const loadLive = async () => {
-    setLiveLoading(true);
-    setLiveError('');
-    try {
-      const res = await fetch('/api/dspm/state', { cache: 'no-store' });
-      const json = await res.json();
-      if (!json.ok) throw new Error(json.error || '조회 실패');
-      setLive(json.data);
-    } catch (err) {
-      setLiveError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLiveLoading(false);
-    }
-  };
-
-  useEffect(() => { loadLive(); }, []);
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'dspm_live', 'snapshot'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setLive(Array.isArray(data.data) ? data.data : []);
+        setLiveFetchedAt(data.fetchedAtIso || '');
+        setLiveMissing(false);
+      } else {
+        setLiveMissing(true);
+      }
+    });
+    return unsub;
+  }, []);
 
   // Firebase 데이터 로드 시 로컬 상태에 반영
   useEffect(() => {
@@ -186,8 +187,9 @@ export default function MachineSettingsPage() {
 
       <p className="text-xs text-gray-600">
         💡 실측 설비(MCNO)를 채우면 해당 공정은 사람이 터미널에서 누르지 않아도 사내 DSPM 실측 API로부터
-        자동으로 RUN/IDLE/정지코드가 반영됩니다. 비워두면 지금처럼 <code>/terminal/[no]</code>에서 수동 입력합니다.
-        장비명·기종·제조사 수정 후 <strong>[저장]</strong>을 눌러야 반영됩니다.
+        자동으로 RUN/IDLE/정지코드가 반영됩니다(사내망 PC에서 도는 동기화 스크립트가 반영). 비워두면
+        지금처럼 <code>/terminal/[no]</code>에서 수동 입력합니다. 장비명·기종·제조사 수정 후
+        <strong> [저장]</strong>을 눌러야 반영됩니다.
       </p>
 
       {/* 실측 설비 미리보기 — 어떤 MCNO가 어떤 이름/상태인지 보고 위 입력칸에 채워 넣는다 */}
@@ -196,20 +198,19 @@ export default function MachineSettingsPage() {
           <div>
             <h2 className="text-sm font-bold text-gray-200">실측 DSPM 설비 목록 (참고용)</h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              사내 API(<code>getmachinestate</code>)가 지금 이 순간 보고 중인 설비입니다.
-              위 표 어떤 행에도 매칭 안 된 항목은 아래 &quot;미매핑&quot;에 따로 표시됩니다.
+              사내망 PC의 동기화 스크립트(dspm-local-sync)가 마지막으로 가져온 실측 상태입니다.
+              {liveFetchedAt && <> · 마지막 수신: {new Date(liveFetchedAt).toLocaleString('ko-KR')}</>}
             </p>
           </div>
-          <button onClick={loadLive} disabled={liveLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition-colors text-xs shrink-0">
-            <RefreshCw className={`w-3.5 h-3.5 ${liveLoading ? 'animate-spin' : ''}`} />새로고침
-          </button>
         </div>
         <div className="p-4">
-          {liveError && (
-            <p className="text-sm text-rose-400 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" />조회 실패: {liveError}</p>
+          {liveMissing && (
+            <p className="text-sm text-amber-400 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4" />
+              아직 데이터가 없습니다 — 사내망 PC에서 dspm-local-sync 스크립트가 한 번도 실행되지 않았을 수 있습니다.
+            </p>
           )}
-          {!liveError && live.length === 0 && !liveLoading && (
+          {!liveMissing && live.length === 0 && (
             <p className="text-sm text-gray-600">보고 중인 설비가 없습니다.</p>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">

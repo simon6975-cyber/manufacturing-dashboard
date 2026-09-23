@@ -1,7 +1,7 @@
 // src/components/ProcessFlowDiagram.tsx
 'use client';
 
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts';
 import { Play, Pause, AlertCircle, ChevronRight, RefreshCw, AlertTriangle, X, Clock } from 'lucide-react';
 import { subscribeMachines, MachineState, MachineHistoryEntry } from '@/lib/machine-service';
@@ -23,6 +23,10 @@ interface ProcessData {
 }
 
 const DEFAULT_QUEUE_THRESHOLD = 5000;
+
+// 실측 API 자동 동기화 폴링 주기 — 대시보드가 열려 있는 동안 /api/sync-machines 를 호출한다.
+// (mcno가 매핑된 공정만 자동 반영되고, 매핑 안 된 공정은 지금처럼 /terminal 수동 입력을 그대로 쓴다)
+const SYNC_INTERVAL_MS = 15000;
 
 
 // ============================================
@@ -280,9 +284,31 @@ const ProcessFlowDiagram: React.FC = () => {
   const mountTimeRef = useRef(Date.now());
   const [firebaseStates, setFirebaseStates] = useState<Record<number,MachineState>>({});
   const { defs: machineDefs } = useMachineDefs();
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(()=>{ const i=setInterval(()=>setNow(Date.now()),1000); return()=>clearInterval(i); },[]);
   useEffect(()=>{ const u=subscribeMachines(s=>setFirebaseStates(s)); return u; },[]);
+
+  // 실측 DSPM API 동기화 — 이 화면이 열려 있는 동안 주기적으로 서버 라우트를 호출해
+  // Firestore(machines/*)를 최신 상태로 맞춘다. mcno가 매핑된 공정만 자동 반영되며
+  // (설정 > 장비 관리에서 매핑), 나머지는 지금처럼 터미널 수동 입력이 그대로 적용된다.
+  const triggerSync = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/sync-machines', { cache: 'no-store' });
+      if (!res.ok) console.error('설비 동기화 실패:', res.status);
+    } catch (err) {
+      console.error('설비 동기화 실패:', err);
+    } finally {
+      setSyncing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    triggerSync();
+    const i = setInterval(triggerSync, SYNC_INTERVAL_MS);
+    return () => clearInterval(i);
+  }, [triggerSync]);
 
   const p = useMemo(()=>{
     const map: Record<number,ProcessData> = {};
@@ -363,7 +389,10 @@ const ProcessFlowDiagram: React.FC = () => {
         </div>
         <div className="flex items-center gap-1.5 text-[11px]">
           <Legend color="emerald" label="RUN"/><Legend color="amber" label="IDLE"/><Legend color="rose" label="STOP" pulse/>
-          <button className="flex items-center gap-1.5 px-2.5 py-1 ml-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition-colors text-[11px]"><RefreshCw className="w-3 h-3"/>새로고침</button>
+          <button onClick={triggerSync} disabled={syncing}
+            className="flex items-center gap-1.5 px-2.5 py-1 ml-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition-colors text-[11px] disabled:opacity-60">
+            <RefreshCw className={`w-3 h-3 ${syncing?'animate-spin':''}`}/>새로고침
+          </button>
         </div>
       </div>
 

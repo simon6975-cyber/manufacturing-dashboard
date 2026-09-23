@@ -11,6 +11,7 @@ export interface MachineDef {
   model: string;
   maker: string;
   group: string; // 내지, 표지, 제본, 포장
+  mcno?: number; // 실측 DSPM API 설비번호(MCNO) — 매핑 안 됐으면 undefined(수동 터미널 유지)
 }
 
 // 기본 장비 정의 (Firebase에 데이터 없을 때 사용)
@@ -41,6 +42,7 @@ export async function saveMachineDefs(machines: MachineDef[]): Promise<void> {
   const promises = machines.map(m =>
     setDoc(doc(db, 'machine_definitions', String(m.no)), {
       no: m.no, name: m.name, model: m.model, maker: m.maker, group: m.group,
+      mcno: m.mcno ?? null, // Firestore는 undefined 저장 불가 → 미매핑은 null
     })
   );
   await Promise.all(promises);
@@ -71,6 +73,7 @@ export function useMachineDefs(): { defs: Record<number, MachineDef>; loading: b
             model: data.model ?? merged[no].model,
             maker: data.maker ?? merged[no].maker,
             group: data.group || merged[no].group,
+            mcno: typeof data.mcno === 'number' ? data.mcno : merged[no].mcno,
           };
         }
       });

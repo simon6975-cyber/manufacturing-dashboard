@@ -20,57 +20,17 @@ interface ProcessData {
   jobProgress: number; queueThreshold: number; initialElapsedSeconds: number;
   stopReason: string; dailyProduction: number; dailyTarget: number;
   bottleneckReason: string; history: MachineHistoryEntry[];
+  group: string; equipmentGroup: string;
+}
+
+interface DynamicEquipmentGroup {
+  id: string;
+  name: string;
+  machines: number[];
+  processGroup: string;
 }
 
 const DEFAULT_QUEUE_THRESHOLD = 5000;
-
-// 실측 DSPM API 동기화는 Vercel(이 앱)이 아니라 사내망 PC에서 도는 dspm-local-sync
-// 스크립트가 담당한다(Vercel → dspm.dsjs.co.kr 은 방화벽에 막혀 서버에서 직접 호출이 안 된다).
-// 이 화면은 그 스크립트가 Firestore(machines/*)에 써준 값을 실시간 구독만 하면 된다.
-
-
-// ============================================
-// 장비군 정의
-// ============================================
-const EQUIPMENT_GROUPS = [
-  { id:'continuous', name:'연속지출력기', machines:[1,2], processGroup:'내지' },
-  { id:'r2c',        name:'롤재단',         machines:[3,4], processGroup:'내지' },
-  { id:'sheet',      name:'낱장출력',    machines:[5,6], processGroup:'표지' },
-  { id:'coating',    name:'코팅',        machines:[7,8], processGroup:'표지' },
-  { id:'epoxy',      name:'에폭시',      machines:[9],   processGroup:'표지' },
-  { id:'cutting',    name:'낱장재단',    machines:[10,11],processGroup:'표지' },
-  { id:'binding',    name:'제본',        machines:[12,13,14],processGroup:'제본' },
-  { id:'saddle',     name:'중철기',      machines:[15],  processGroup:'제본' },
-  { id:'wing',       name:'날개접지기',  machines:[16],  processGroup:'제본' },
-  { id:'exam',       name:'시험지접지기',machines:[17],  processGroup:'제본' },
-  { id:'box',        name:'박스포장',    machines:[18],  processGroup:'포장' },
-  { id:'pallet',     name:'댐지포장',    machines:[19],  processGroup:'포장' },
-];
-
-// ============================================
-// 19개 공정 데이터
-// ============================================
-const processes: ProcessData[] = [
-  { no:1, name:'연속지출력 1호기',model:'520HD+',maker:'SCREEN',status:'RUN',queue:3682,queueCount:3,inProgress:1280,completed:9318,jobProgress:65,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:9252,stopReason:'S5',dailyProduction:13814,dailyTarget:13000,bottleneckReason:'',history:[] },
-  { no:2, name:'연속지출력 2호기',model:'520HD+',maker:'SCREEN',status:'RUN',queue:6240,queueCount:5,inProgress:2388,completed:7939,jobProgress:42,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:4530,stopReason:'',dailyProduction:12500,dailyTarget:13000,bottleneckReason:'BN2',history:[] },
-  { no:3, name:'롤재단 1호기',model:'S2020',maker:'TECHNAU',status:'RUN',queue:5340,queueCount:4,inProgress:1190,completed:5047,jobProgress:78,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:13338,stopReason:'',dailyProduction:8200,dailyTarget:8000,bottleneckReason:'',history:[] },
-  { no:4, name:'롤재단 2호기',model:'S2320',maker:'TECHNAU',status:'IDLE',queue:0,queueCount:0,inProgress:0,completed:4239,jobProgress:0,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:1425,stopReason:'S1',dailyProduction:7800,dailyTarget:8000,bottleneckReason:'BN1',history:[] },
-  { no:5, name:'날장출력 1호기',model:'이리데스',maker:'FUJI FILM',status:'RUN',queue:1076,queueCount:2,inProgress:488,completed:2424,jobProgress:55,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:2902,stopReason:'',dailyProduction:4100,dailyTarget:4000,bottleneckReason:'',history:[] },
-  { no:6, name:'날장출력 2호기',model:'레보리아',maker:'FUJI FILM',status:'STOP',queue:2786,queueCount:3,inProgress:0,completed:714,jobProgress:0,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:1091,stopReason:'S6',dailyProduction:2200,dailyTarget:4000,bottleneckReason:'',history:[] },
-  { no:7, name:'코팅 1호기',model:'EUROLAM 540',maker:'GMP',status:'RUN',queue:598,queueCount:1,inProgress:800,completed:4402,jobProgress:88,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:15308,stopReason:'',dailyProduction:6800,dailyTarget:6500,bottleneckReason:'',history:[] },
-  { no:8, name:'코팅 2호기',model:'PROTOPIC 540',maker:'GMP',status:'STOP',queue:2471,queueCount:2,inProgress:0,completed:2529,jobProgress:0,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:1975,stopReason:'S1',dailyProduction:3900,dailyTarget:5000,bottleneckReason:'',history:[] },
-  { no:9, name:'에폭시',model:'DDC 810',maker:'DUPLO',status:'RUN',queue:664,queueCount:1,inProgress:361,completed:1336,jobProgress:72,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:4124,stopReason:'',dailyProduction:2400,dailyTarget:2500,bottleneckReason:'',history:[] },
-  { no:10,name:'낱장재단 1호기',model:'POLAR 92',maker:'HEIDELBERG',status:'RUN',queue:5430,queueCount:4,inProgress:695,completed:3373,jobProgress:60,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:8493,stopReason:'',dailyProduction:5600,dailyTarget:5500,bottleneckReason:'BN3',history:[] },
-  { no:11,name:'낱장재단 2호기',model:'C860',maker:'대호',status:'IDLE',queue:0,queueCount:0,inProgress:0,completed:2802,jobProgress:0,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:687,stopReason:'',dailyProduction:4800,dailyTarget:5000,bottleneckReason:'',history:[] },
-  { no:12,name:'제본 1호기',model:'BQ470/HT80',maker:'HORIZON',status:'RUN',queue:500,queueCount:1,inProgress:273,completed:1500,jobProgress:80,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:14102,stopReason:'',dailyProduction:2700,dailyTarget:2800,bottleneckReason:'',history:[] },
-  { no:13,name:'제본 2호기',model:'BQ470/HT80',maker:'HORIZON',status:'RUN',queue:712,queueCount:1,inProgress:143,completed:1288,jobProgress:90,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:10099,stopReason:'',dailyProduction:2300,dailyTarget:2500,bottleneckReason:'',history:[] },
-  { no:14,name:'제본 3호기',model:'BQ500/HT300',maker:'HORIZON',status:'STOP',queue:1818,queueCount:2,inProgress:0,completed:382,jobProgress:0,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:2558,stopReason:'S7',dailyProduction:900,dailyTarget:2500,bottleneckReason:'',history:[] },
-  { no:15,name:'중철기',model:'SPF-200A',maker:'HORIZON',status:'RUN',queue:589,queueCount:1,inProgress:322,completed:2911,jobProgress:75,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:5631,stopReason:'',dailyProduction:4900,dailyTarget:5000,bottleneckReason:'',history:[] },
-  { no:16,name:'날개접지기',model:'ZK320',maker:'',status:'STOP',queue:1327,queueCount:2,inProgress:0,completed:1173,jobProgress:0,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:3074,stopReason:'S1',dailyProduction:2100,dailyTarget:3000,bottleneckReason:'',history:[] },
-  { no:17,name:'시험지접지기',model:'CSMO',maker:'HUNKELER',status:'IDLE',queue:0,queueCount:0,inProgress:0,completed:522,jobProgress:0,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:308,stopReason:'',dailyProduction:1100,dailyTarget:2000,bottleneckReason:'',history:[] },
-  { no:18,name:'박스포장',model:'',maker:'',status:'RUN',queue:730,queueCount:1,inProgress:297,completed:770,jobProgress:50,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:7786,stopReason:'',dailyProduction:1500,dailyTarget:1500,bottleneckReason:'',history:[] },
-  { no:19,name:'댐지포장',model:'',maker:'',status:'IDLE',queue:0,queueCount:0,inProgress:0,completed:646,jobProgress:0,queueThreshold:DEFAULT_QUEUE_THRESHOLD,initialElapsedSeconds:862,stopReason:'',dailyProduction:1300,dailyTarget:1500,bottleneckReason:'',history:[] },
-];
 
 // 3가지 상태만 표시 (SETUP→IDLE 병합)
 const statusConfig: Record<DisplayStatus, { banner:string; text:string; border:string; bar:string; icon:React.ComponentType<{className?:string}>|null }> = {
@@ -84,7 +44,6 @@ const statusDot: Record<DisplayStatus,string> = { RUN:'bg-emerald-400', IDLE:'bg
 // ============================================
 // 유틸
 // ============================================
-function getCategory(no:number) { if(no<=4)return'내지'; if(no<=11)return'표지'; if(no<=17)return'제본'; return'포장'; }
 function formatElapsed(s:number) { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60; return`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
 function formatDuration(ms:number) { const s=Math.floor(ms/1000); if(s<60)return`${s}초`; if(s<3600)return`${Math.floor(s/60)}분 ${s%60}초`; return`${Math.floor(s/3600)}시간 ${Math.floor((s%3600)/60)}분`; }
 const DAY_LABELS = ['화','수','목','금','토','일','월'];
@@ -92,8 +51,33 @@ function getLast7Days(base:number,seed:number) { return DAY_LABELS.map((day,i)=>
 function getMonthlyTotal(d:number,s:number) { return Math.round(d*20.5+s*211); }
 function getAchievementRate(m:number,t:number) { return t<=0?0:Math.round((m/(t*30))*100); }
 
+// 장비 초기 시뮬레이션 데이터 (Firebase에 상태가 없을 때)
+function getDefaultProcessData(def: MachineDef): Omit<ProcessData, 'name' | 'model' | 'maker'> {
+  const seed = def.no * 137;
+  const statuses: Status[] = ['RUN', 'RUN', 'RUN', 'IDLE', 'IDLE', 'STOP'];
+  const status = statuses[seed % statuses.length];
+  return {
+    no: def.no,
+    status,
+    queue: status === 'IDLE' ? 0 : (seed % 5000) + 500,
+    queueCount: status === 'IDLE' ? 0 : (seed % 5) + 1,
+    inProgress: status === 'RUN' ? (seed % 2000) + 200 : 0,
+    completed: (seed % 8000) + 1000,
+    jobProgress: status === 'RUN' ? (seed % 80) + 20 : 0,
+    queueThreshold: DEFAULT_QUEUE_THRESHOLD,
+    initialElapsedSeconds: (seed % 20000) + 300,
+    stopReason: status === 'STOP' ? `S${(seed % 7) + 1}` : '',
+    dailyProduction: (seed % 10000) + 2000,
+    dailyTarget: (seed % 8000) + 3000,
+    bottleneckReason: '',
+    history: [],
+    group: def.group,
+    equipmentGroup: def.equipmentGroup || def.name.replace(/\s*\d+호기$/, '').replace(/\s+/g, ''),
+  };
+}
+
 // ============================================
-// 장비 카드 (대기물량 제거, 진행률+소요시간만)
+// 장비 카드
 // ============================================
 const ProcessCard: React.FC<{ process:ProcessData; onSelect?:(no:number)=>void }> = ({ process, onSelect }) => {
   const { codeMap: stopCodeNames } = useStopCodes();
@@ -136,17 +120,16 @@ const ProcessCard: React.FC<{ process:ProcessData; onSelect?:(no:number)=>void }
 };
 
 // ============================================
-// 장비군 컴포넌트 (세로 배열, 콤팩트)
+// 장비군 컴포넌트
 // ============================================
 const EquipmentGroupComp: React.FC<{
-  group: typeof EQUIPMENT_GROUPS[0]; machineMap: Record<number,ProcessData>; onSelect:(no:number)=>void; now:number;
+  group: DynamicEquipmentGroup; machineMap: Record<number,ProcessData>; onSelect:(no:number)=>void; now:number;
 }> = ({ group, machineMap, onSelect, now }) => {
   const machines = group.machines.map(no=>machineMap[no]).filter(Boolean);
   const totalQueue = machines.reduce((s,m)=>{ const ds=toDisplay(m.status); return s+(ds==='IDLE'?0:m.queue); },0);
   const totalQueueCount = machines.reduce((s,m)=>{ const ds=toDisplay(m.status); return s+(ds==='IDLE'?0:m.queueCount); },0);
   const isOverloaded = totalQueue >= DEFAULT_QUEUE_THRESHOLD;
 
-  // 초과 시작 시각 추적 (초과 해소 시 리셋)
   const overloadStartRef = useRef<number|null>(null);
   if (isOverloaded && overloadStartRef.current === null) {
     overloadStartRef.current = Date.now();
@@ -194,9 +177,7 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
   const last7 = useMemo(()=>getLast7Days(process.dailyProduction,process.no),[process]);
   const monthly = useMemo(()=>getMonthlyTotal(process.dailyProduction,process.no),[process]);
   const rate = getAchievementRate(monthly,process.dailyTarget);
-  const category = getCategory(process.no);
 
-  // 이력에 소요시간 계산
   const historyWithDuration = useMemo(()=>{
     return process.history.map((h,i)=>{
       const nextTs = i===0 ? now : process.history[i-1].timestamp;
@@ -211,7 +192,7 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
       <div className="p-5 border-b border-gray-800 sticky top-0 bg-gray-950 z-10">
         <div className="flex items-start justify-between">
           <div><h2 className="text-xl font-bold text-gray-100">{process.name}</h2>
-            <p className="text-xs text-gray-500 mt-1 tracking-wide">NO {process.no} · {process.model||'-'} · {process.maker||'-'} · {category}</p>
+            <p className="text-xs text-gray-500 mt-1 tracking-wide">NO {process.no} · {process.model||'-'} · {process.maker||'-'} · {process.group}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-200 p-1 hover:bg-gray-800 rounded transition-colors"><X className="w-5 h-5"/></button>
         </div>
@@ -223,7 +204,6 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
         <InfoRow label="금일 정지 사유">{process.stopReason?(<span className="flex items-center gap-1.5"><span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-xs font-medium border border-indigo-500/30">{process.stopReason}</span><span className="text-xs text-gray-400">{stopCodeNames[process.stopReason]||''}</span></span>):(<span className="text-gray-500">없음</span>)}</InfoRow>
       </div>
 
-      {/* 상태 변경 이력 (시작시간 + 소요시간) */}
       {historyWithDuration.length > 0 && (
         <div className="px-5 pt-4 pb-2">
           <h3 className="text-sm font-bold text-gray-200 mb-2 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-gray-500"/>상태 변경 이력</h3>
@@ -268,12 +248,17 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
 const Arrow: React.FC<{size?:'sm'|'lg'}> = ({size='sm'}) => (
   <div className="flex items-center justify-center shrink-0"><ChevronRight className={`${size==='lg'?'w-7 h-7':'w-5 h-5'} text-gray-600`}/></div>
 );
-const GroupBox: React.FC<{title:string;titleColor?:string;children:React.ReactNode;className?:string}> = ({title,titleColor='text-sky-300',children,className=''}) => (
-  <div className={`relative rounded-lg border border-dashed border-gray-700 px-3 pt-5 pb-3 ${className}`}>
-    <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[11px] font-bold tracking-wider ${titleColor}`}>{title}</span>
-    {children}
-  </div>
-);
+
+// ============================================
+// 공정 그룹 색상
+// ============================================
+const processGroupColors: Record<string, string> = {
+  '내지': 'text-sky-300',
+  '표지': 'text-pink-300',
+  '제본': 'text-sky-300',
+  '포장': 'text-cyan-300',
+};
+const PROCESS_GROUP_ORDER = ['내지', '표지', '제본', '포장'];
 
 // ============================================
 // 메인 컴포넌트
@@ -283,30 +268,78 @@ const ProcessFlowDiagram: React.FC = () => {
   const [now, setNow] = useState(Date.now());
   const mountTimeRef = useRef(Date.now());
   const [firebaseStates, setFirebaseStates] = useState<Record<number,MachineState>>({});
-  const { defs: machineDefs } = useMachineDefs();
+  const { defs: machineDefs, allDefs } = useMachineDefs();
 
   useEffect(()=>{ const i=setInterval(()=>setNow(Date.now()),1000); return()=>clearInterval(i); },[]);
   useEffect(()=>{ const u=subscribeMachines(s=>setFirebaseStates(s)); return u; },[]);
 
+  // 장비 정의에서 동적으로 장비군 생성
+  const dynamicGroups: DynamicEquipmentGroup[] = useMemo(() => {
+    const groupMap = new Map<string, { name: string; machines: number[]; processGroup: string }>();
+
+    allDefs.forEach(def => {
+      const eqGroup = def.equipmentGroup || def.name.replace(/\s*\d+호기$/, '').replace(/\s+/g, '');
+      const key = `${def.group}__${eqGroup}`;
+      if (!groupMap.has(key)) {
+        groupMap.set(key, { name: eqGroup, machines: [], processGroup: def.group });
+      }
+      groupMap.get(key)!.machines.push(def.no);
+    });
+
+    // 정렬: group 순서(내지→표지→제본→포장) → 장비번호 순
+    const result: DynamicEquipmentGroup[] = [];
+    groupMap.forEach((val, key) => {
+      val.machines.sort((a, b) => a - b);
+      result.push({ id: key, ...val });
+    });
+    result.sort((a, b) => {
+      const aIdx = PROCESS_GROUP_ORDER.indexOf(a.processGroup);
+      const bIdx = PROCESS_GROUP_ORDER.indexOf(b.processGroup);
+      if (aIdx !== bIdx) return aIdx - bIdx;
+      return Math.min(...a.machines) - Math.min(...b.machines);
+    });
+    return result;
+  }, [allDefs]);
+
+  // 공정별 장비군 묶기
+  const groupsByProcess = useMemo(() => {
+    const map: Record<string, DynamicEquipmentGroup[]> = {};
+    PROCESS_GROUP_ORDER.forEach(pg => { map[pg] = []; });
+    dynamicGroups.forEach(g => {
+      if (!map[g.processGroup]) map[g.processGroup] = [];
+      map[g.processGroup].push(g);
+    });
+    return map;
+  }, [dynamicGroups]);
+
+  // 프로세스 데이터 생성
   const p = useMemo(()=>{
     const map: Record<number,ProcessData> = {};
-    processes.forEach(proc=>{
-      const fb = firebaseStates[proc.no];
-      const def = machineDefs[proc.no];
-      // 장비 정의 병합 (Firebase 설정 > 기본값)
-      const base = def ? { ...proc, name: def.name, model: def.model, maker: def.maker } : proc;
+    allDefs.forEach(def => {
+      const defaults = getDefaultProcessData(def);
+      const fb = firebaseStates[def.no];
+      const base: ProcessData = {
+        ...defaults,
+        name: def.name,
+        model: def.model,
+        maker: def.maker,
+        group: def.group,
+        equipmentGroup: def.equipmentGroup || def.name.replace(/\s*\d+호기$/, '').replace(/\s+/g, ''),
+      };
       if(fb){
         const elapsed = Math.max(0,Math.floor((now-fb.statusChangedAt.getTime())/1000));
-        map[proc.no] = {...base, status:fb.status, stopReason:fb.stopReason, initialElapsedSeconds:elapsed, history:fb.history||[],
+        map[def.no] = {...base, status:fb.status, stopReason:fb.stopReason, initialElapsedSeconds:elapsed, history:fb.history||[],
           queue:toDisplay(fb.status)==='IDLE'?0:base.queue, queueCount:toDisplay(fb.status)==='IDLE'?0:base.queueCount,
           inProgress:toDisplay(fb.status)==='RUN'?base.inProgress:0, jobProgress:toDisplay(fb.status)==='RUN'?base.jobProgress:0 };
       } else {
         const elapsed = base.initialElapsedSeconds+Math.floor((now-mountTimeRef.current)/1000);
-        map[proc.no] = {...base, initialElapsedSeconds:elapsed};
+        map[def.no] = {...base, initialElapsedSeconds:elapsed};
       }
     });
     return map;
-  },[firebaseStates,now,machineDefs]);
+  },[firebaseStates,now,allDefs]);
+
+  const totalMachines = allDefs.length;
 
   // 3상태 카운트
   const statusCounts = useMemo(()=>{
@@ -316,8 +349,8 @@ const ProcessFlowDiagram: React.FC = () => {
   },[p]);
 
   // 대기물량 초과 장비군 수
-  const overloadedGroups = useMemo(()=>{
-    return EQUIPMENT_GROUPS.filter(g=>{
+  const overloadedGroupCount = useMemo(()=>{
+    return dynamicGroups.filter(g=>{
       const total = g.machines.reduce((s,no)=>{
         const m = p[no];
         if(!m) return s;
@@ -325,7 +358,7 @@ const ProcessFlowDiagram: React.FC = () => {
       },0);
       return total >= DEFAULT_QUEUE_THRESHOLD;
     }).length;
-  },[p]);
+  },[p, dynamicGroups]);
 
   const totals = useMemo(()=>{
     let queue=0,queueCount=0,completed=0;
@@ -340,16 +373,11 @@ const ProcessFlowDiagram: React.FC = () => {
 
   useEffect(()=>{ const h=(e:KeyboardEvent)=>{if(e.key==='Escape')setSelectedNo(null);}; window.addEventListener('keydown',h); return()=>window.removeEventListener('keydown',h); },[]);
 
-  // 장비군 ID로 렌더링하는 숏컷
-  const groupMap = useMemo(()=>{
-    const m: Record<string, typeof EQUIPMENT_GROUPS[0]> = {};
-    EQUIPMENT_GROUPS.forEach(g=>{ m[g.id]=g; });
-    return m;
-  },[]);
-  const EG = ({id}:{id:string}) => {
-    const g = groupMap[id];
-    return g ? <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now}/> : null;
-  };
+  // 내지/표지를 병렬로 렌더링할지 여부
+  const hasNaeji = (groupsByProcess['내지'] || []).length > 0;
+  const hasPyoji = (groupsByProcess['표지'] || []).length > 0;
+  const hasJebon = (groupsByProcess['제본'] || []).length > 0;
+  const hasPojang = (groupsByProcess['포장'] || []).length > 0;
 
   return (
     <div className="flex flex-col gap-4 p-5 bg-black min-h-full">
@@ -358,9 +386,9 @@ const ProcessFlowDiagram: React.FC = () => {
           <h2 className="text-2xl font-bold text-gray-100">제작공정 흐름도</h2>
           <p className="text-xs text-gray-500 mt-1">
             내지 · 표지 (병렬) → 제본 → 포장 · 실시간 상태 모니터링
-            {overloadedGroups > 0 && (
+            {overloadedGroupCount > 0 && (
               <span className="ml-2 text-amber-400 font-medium">
-                • 대기물량 초과 {overloadedGroups}개 장비군 (기준 {DEFAULT_QUEUE_THRESHOLD.toLocaleString()})
+                • 대기물량 초과 {overloadedGroupCount}개 장비군 (기준 {DEFAULT_QUEUE_THRESHOLD.toLocaleString()})
               </span>
             )}
           </p>
@@ -372,52 +400,74 @@ const ProcessFlowDiagram: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <StatusCount icon={Play} label="가동 중" count={statusCounts.RUN} total={19} color="emerald"/>
+        <StatusCount icon={Play} label="가동 중" count={statusCounts.RUN} total={totalMachines} color="emerald"/>
         <StatusCount icon={Pause} label="대기" count={statusCounts.IDLE} color="amber"/>
         <StatusCount icon={AlertCircle} label="정지" count={statusCounts.STOP} color="rose" pulse/>
       </div>
 
-      {/* 메인 흐름도 — 가로 공정 순서 */}
+      {/* 메인 흐름도 — 동적 생성 */}
       <div className="flex-1 overflow-x-auto pb-2 pt-1">
         <div className="flex items-start gap-0 mt-2">
 
           {/* 내지 + 표지 (병렬) */}
-          <div className="flex flex-col gap-2 shrink-0">
-            {/* Row 1: 내지 */}
-            <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2">
-              <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-sky-300">내지</span>
-              <div className="flex items-start gap-1.5">
-                <EG id="continuous"/><Arrow/><EG id="r2c"/>
-              </div>
+          {(hasNaeji || hasPyoji) && (
+            <div className="flex flex-col gap-2 shrink-0">
+              {hasNaeji && (
+                <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2">
+                  <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['내지']}`}>내지</span>
+                  <div className="flex items-start gap-1.5">
+                    {groupsByProcess['내지'].map((g, i) => (
+                      <React.Fragment key={g.id}>
+                        {i > 0 && <Arrow />}
+                        <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now} />
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {hasPyoji && (
+                <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2">
+                  <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['표지']}`}>표지</span>
+                  <div className="flex items-start gap-1.5">
+                    {groupsByProcess['표지'].map((g, i) => (
+                      <React.Fragment key={g.id}>
+                        {i > 0 && <Arrow />}
+                        <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now} />
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-            {/* Row 2: 표지 */}
-            <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2">
-              <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-pink-300">표지</span>
-              <div className="flex items-start gap-1.5">
-                <EG id="sheet"/><Arrow/><EG id="coating"/><Arrow/><EG id="epoxy"/><Arrow/><EG id="cutting"/>
-              </div>
-            </div>
-          </div>
+          )}
 
-          <Arrow size="lg"/>
+          {(hasNaeji || hasPyoji) && (hasJebon || hasPojang) && <Arrow size="lg" />}
 
           {/* 제본 */}
-          <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2 shrink-0">
-            <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-sky-300">제본</span>
-            <div className="flex flex-col gap-1.5">
-              <EG id="binding"/><EG id="saddle"/><EG id="wing"/><EG id="exam"/>
+          {hasJebon && (
+            <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2 shrink-0">
+              <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['제본']}`}>제본</span>
+              <div className="flex flex-col gap-1.5">
+                {groupsByProcess['제본'].map(g => (
+                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          <Arrow size="lg"/>
+          {hasJebon && hasPojang && <Arrow size="lg" />}
 
           {/* 포장 */}
-          <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2 shrink-0">
-            <span className="absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider text-cyan-300">포장</span>
-            <div className="flex flex-col gap-1.5">
-              <EG id="box"/><EG id="pallet"/>
+          {hasPojang && (
+            <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2 shrink-0">
+              <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['포장']}`}>포장</span>
+              <div className="flex flex-col gap-1.5">
+                {groupsByProcess['포장'].map(g => (
+                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
         </div>
       </div>

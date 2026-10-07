@@ -34,8 +34,8 @@ export const DEFAULT_MACHINES: MachineDef[] = [
   { no:15, name:'중철기',           model:'SPF-200A',     maker:'HORIZON',    group:'제본', equipmentGroup:'중철기' },
   { no:16, name:'날개접지기',       model:'ZK320',        maker:'',           group:'제본', equipmentGroup:'날개접지기' },
   { no:17, name:'시험지접지기',     model:'CSMO',         maker:'HUNKELER',   group:'제본', equipmentGroup:'시험지접지기' },
-  { no:18, name:'박스포장',         model:'',             maker:'',           group:'포장', equipmentGroup:'박스포장' },
-  { no:19, name:'댐지포장',         model:'',             maker:'',           group:'포장', equipmentGroup:'댐지포장' },
+  { no:18, name:'박스포장',         model:'',             maker:'',           group:'포장', equipmentGroup:'포장' },
+  { no:19, name:'댐지포장',         model:'',             maker:'',           group:'포장', equipmentGroup:'포장' },
 ];
 
 // Firebase에 장비 정보 저장

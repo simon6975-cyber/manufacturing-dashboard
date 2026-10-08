@@ -312,15 +312,6 @@ const ProcessFlowDiagram: React.FC = () => {
     return map;
   }, [dynamicGroups]);
 
-  // 레이아웃 분할: 표지 중 장비번호 10 이상 장비군은 제본 열로 이동 (10-17 같은열 배치)
-  const layoutZones = useMemo(() => {
-    const pyojiAll = groupsByProcess['표지'] || [];
-    const pyojiLeft = pyojiAll.filter(g => Math.min(...g.machines) < 10);
-    const pyojiMiddle = pyojiAll.filter(g => Math.min(...g.machines) >= 10);
-    const middleColumn = [...pyojiMiddle, ...(groupsByProcess['제본'] || [])];
-    return { pyojiLeft, middleColumn };
-  }, [groupsByProcess]);
-
   // 프로세스 데이터 생성
   const p = useMemo(()=>{
     const map: Record<number,ProcessData> = {};
@@ -384,8 +375,8 @@ const ProcessFlowDiagram: React.FC = () => {
 
   // 레이아웃 존 boolean
   const hasNaeji = (groupsByProcess['내지'] || []).length > 0;
-  const hasLeftPyoji = layoutZones.pyojiLeft.length > 0;
-  const hasMiddle = layoutZones.middleColumn.length > 0;
+  const hasPyoji = (groupsByProcess['표지'] || []).length > 0;
+  const hasJebon = (groupsByProcess['제본'] || []).length > 0;
   const hasPojang = (groupsByProcess['포장'] || []).length > 0;
 
   return (
@@ -418,8 +409,8 @@ const ProcessFlowDiagram: React.FC = () => {
       <div className="flex-1 overflow-x-auto pb-2 pt-1">
         <div className="flex items-start gap-0 mt-2">
 
-          {/* 내지 + 표지 전반부 (병렬) */}
-          {(hasNaeji || hasLeftPyoji) && (
+          {/* 내지 + 표지 (병렬) */}
+          {(hasNaeji || hasPyoji) && (
             <div className="flex flex-col gap-2 shrink-0">
               {hasNaeji && (
                 <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2">
@@ -434,11 +425,11 @@ const ProcessFlowDiagram: React.FC = () => {
                   </div>
                 </div>
               )}
-              {hasLeftPyoji && (
+              {hasPyoji && (
                 <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2">
                   <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['표지']}`}>표지</span>
                   <div className="flex items-start gap-1.5">
-                    {layoutZones.pyojiLeft.map((g, i) => (
+                    {groupsByProcess['표지'].map((g, i) => (
                       <React.Fragment key={g.id}>
                         {i > 0 && <Arrow />}
                         <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now} />
@@ -450,21 +441,21 @@ const ProcessFlowDiagram: React.FC = () => {
             </div>
           )}
 
-          {(hasNaeji || hasLeftPyoji) && (hasMiddle || hasPojang) && <Arrow size="lg" />}
+          {(hasNaeji || hasPyoji) && (hasJebon || hasPojang) && <Arrow size="lg" />}
 
-          {/* 중간 열: 낱장재단(표지 10,11) + 제본 전체(12-17) — 세로 배치 */}
-          {hasMiddle && (
+          {/* 제본 (12-17) — 세로 배치 */}
+          {hasJebon && (
             <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2 shrink-0">
-              <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['제본']}`}>후가공 · 제본</span>
+              <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['제본']}`}>제본</span>
               <div className="flex flex-col gap-1.5">
-                {layoutZones.middleColumn.map(g => (
+                {groupsByProcess['제본'].map(g => (
                   <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} />
                 ))}
               </div>
             </div>
           )}
 
-          {hasMiddle && hasPojang && <Arrow size="lg" />}
+          {hasJebon && hasPojang && <Arrow size="lg" />}
 
           {/* 포장 */}
           {hasPojang && (

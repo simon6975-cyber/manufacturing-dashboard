@@ -2,9 +2,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Save, Loader2, RotateCcw, CheckCircle2, AlertTriangle, Plus, Trash2, X } from 'lucide-react';
+import { Save, Loader2, RotateCcw, CheckCircle2, AlertTriangle, Plus, Trash2, X, GripVertical } from 'lucide-react';
 import { db } from '@/lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection, getDocs, deleteDoc as firestoreDeleteDoc } from 'firebase/firestore';
 import { useMachineDefs, saveMachineDefs, deleteMachineDef, DEFAULT_MACHINES, MachineDef } from '@/lib/machine-defs';
 import type { DspmMachineState } from '@/lib/machine-sync';
 
@@ -20,6 +20,10 @@ export default function MachineSettingsPage() {
   const [newMachine, setNewMachine] = useState<MachineDef>({
     no: 20, name: '', model: '', maker: '', group: '내지', equipmentGroup: ''
   });
+
+  // 드래그 정렬 상태
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
 
   // 실측 DSPM 설비 목록(참고/매핑용).
   const [live, setLive] = useState<DspmMachineState[]>([]);
@@ -69,6 +73,14 @@ export default function MachineSettingsPage() {
   const handleSave = async () => {
     setSaving(true);
     try {
+      // 기존 machine_definitions 문서 중 현재 NO 목록에 없는 것 삭제 (순서 변경 시 고아 문서 정리)
+      const currentNos = new Set(machines.map(m => String(m.no)));
+      const snap = await getDocs(collection(db, 'machine_definitions'));
+      const deletions = snap.docs
+        .filter(d => !currentNos.has(d.id))
+        .map(d => firestoreDeleteDoc(d.ref));
+      if (deletions.length > 0) await Promise.all(deletions);
+
       await saveMachineDefs(machines);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -136,6 +148,39 @@ export default function MachineSettingsPage() {
   const existingGroups = [...new Set(machines.map(m =>
     m.equipmentGroup || m.name.replace(/\s*\d+호기$/, '').replace(/\s+/g, '')
   ).filter(Boolean))];
+
+  // 드래그 정렬 핸들러
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDragIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+  };
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (overIndex !== index) setOverIndex(index);
+  };
+  const handleDrop = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (dragIndex === null || dragIndex === index) {
+      setDragIndex(null);
+      setOverIndex(null);
+      return;
+    }
+    const updated = [...machines];
+    const [moved] = updated.splice(dragIndex, 1);
+    updated.splice(index, 0, moved);
+    // NO 재배정 (1부터 순서대로)
+    const renumbered = updated.map((m, i) => ({ ...m, no: i + 1 }));
+    setMachines(renumbered);
+    setDragIndex(null);
+    setOverIndex(null);
+    setSaved(false);
+  };
+  const handleDragEnd = () => {
+    setDragIndex(null);
+    setOverIndex(null);
+  };
 
   const liveByMcno = new Map(live.map(s => [s.MCNO, s]));
   const mappedMcnos = new Set(machines.filter(m => m.mcno != null).map(m => m.mcno));
@@ -250,6 +295,7 @@ export default function MachineSettingsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-[11px] text-gray-500 uppercase tracking-wider border-b border-gray-800/60 bg-gray-900/40">
+                <th className="w-8 px-1 py-3"></th>
                 <th className="text-center px-3 py-3 w-14">NO</th>
                 <th className="text-left px-3 py-3 min-w-[160px]">장비명</th>
                 <th className="text-left px-3 py-3 min-w-[120px]">기종 (모델)</th>
@@ -261,10 +307,24 @@ export default function MachineSettingsPage() {
               </tr>
             </thead>
             <tbody>
-              {machines.map((m) => {
+              {machines.map((m, idx) => {
                 const liveMatch = m.mcno != null ? liveByMcno.get(m.mcno) : undefined;
                 return (
-                  <tr key={m.no} className="border-b border-gray-800/30 hover:bg-gray-800/20 transition-colors">
+                  <tr key={`row-${idx}`}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, idx)}
+                    onDragOver={(e) => handleDragOver(e, idx)}
+                    onDrop={(e) => handleDrop(e, idx)}
+                    onDragEnd={handleDragEnd}
+                    className={`border-b border-gray-800/30 transition-colors ${
+                      dragIndex === idx ? 'opacity-30 bg-gray-800/10' :
+                      overIndex === idx ? 'border-t-2 !border-t-blue-500 bg-blue-500/5' :
+                      'hover:bg-gray-800/20'
+                    }`}
+                  >
+                    <td className="px-1 py-2 text-center cursor-grab active:cursor-grabbing">
+                      <GripVertical className="w-4 h-4 text-gray-600 hover:text-gray-400 mx-auto" />
+                    </td>
                     <td className="text-center px-3 py-2 font-mono font-bold text-gray-400">
                       {String(m.no).padStart(2, '0')}
                     </td>
@@ -337,9 +397,9 @@ export default function MachineSettingsPage() {
       </div>
 
       <p className="text-xs text-gray-600">
-        💡 장비명·기종·제조사·장비군 수정 후 <strong>[저장]</strong>을 눌러야 반영됩니다.
+        💡 왼쪽 ≡ 핸들을 드래그하여 순서를 변경하면 NO(일련번호)가 자동 재배정됩니다.
+        수정 후 <strong>[저장]</strong>을 눌러야 반영됩니다.
         장비군이 같으면 공정흐름도에서 한 그룹으로 묶입니다.
-        실측 설비(MCNO)를 채우면 DSPM API 자동 연동됩니다.
       </p>
 
       {/* 삭제 확인 모달 */}

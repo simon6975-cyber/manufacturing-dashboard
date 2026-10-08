@@ -57,6 +57,10 @@ export async function deleteMachineDef(no: number): Promise<void> {
   await deleteDoc(doc(db, 'machines', String(no))).catch(() => {});
 }
 
+// DEFAULT_MACHINES의 equipmentGroup 참조 맵 (Firebase fallback용)
+const DEFAULT_EQ_GROUP: Record<number, string> = {};
+DEFAULT_MACHINES.forEach(d => { if (d.equipmentGroup) DEFAULT_EQ_GROUP[d.no] = d.equipmentGroup; });
+
 // 실시간 구독 훅 — 공정흐름도, 터미널에서 공유
 export function useMachineDefs(): { defs: Record<number, MachineDef>; loading: boolean; allDefs: MachineDef[] } {
   const [defs, setDefs] = useState<Record<number, MachineDef>>(() => {
@@ -91,7 +95,7 @@ export function useMachineDefs(): { defs: Record<number, MachineDef>; loading: b
             maker: data.maker ?? '',
             group: data.group || '내지',
             mcno: typeof data.mcno === 'number' ? data.mcno : undefined,
-            equipmentGroup: data.equipmentGroup || data.name?.replace(/\s*\d+호기$/,'').replace(/\s+/g,'') || `장비군${no}`,
+            equipmentGroup: data.equipmentGroup || DEFAULT_EQ_GROUP[no] || data.name?.replace(/\s*\d+호기$/,'').replace(/\s+/g,'') || `장비군${no}`,
           };
         });
         // Firebase에 아직 아무 데이터도 없으면 기본값 유지

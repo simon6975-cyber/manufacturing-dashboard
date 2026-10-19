@@ -34,8 +34,26 @@ export default function MachineSettingsPage() {
     const unsub = onSnapshot(doc(db, 'dspm_live', 'snapshot'), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        setLive(Array.isArray(data.data) ? data.data : []);
-        setLiveFetchedAt(data.fetchedAtIso || '');
+        // Firebase에서 읽은 데이터 타입 정규화 (MCNO: 숫자, TM: ISO 문자열)
+        const rawList = Array.isArray(data.data) ? data.data : [];
+        const normalized: DspmMachineState[] = rawList.map((s: Record<string, unknown>) => ({
+          MCNO: typeof s.MCNO === 'string' ? parseInt(s.MCNO, 10) : Number(s.MCNO) || 0,
+          MCNM: String(s.MCNM || ''),
+          STATE: String(s.STATE || ''),
+          TM: s.TM && typeof s.TM === 'object' && 'toDate' in (s.TM as object)
+            ? (s.TM as { toDate: () => Date }).toDate().toISOString()
+            : typeof s.TM === 'number'
+              ? new Date(s.TM).toISOString()
+              : String(s.TM || ''),
+        }));
+        setLive(normalized);
+        // fetchedAtIso도 Timestamp 객체일 수 있음
+        const fetched = data.fetchedAtIso;
+        setLiveFetchedAt(
+          fetched && typeof fetched === 'object' && 'toDate' in fetched
+            ? fetched.toDate().toISOString()
+            : String(fetched || '')
+        );
         setLiveMissing(false);
       } else {
         setLiveMissing(true);
@@ -182,9 +200,10 @@ export default function MachineSettingsPage() {
     setOverIndex(null);
   };
 
-  const liveByMcno = new Map(live.map(s => [s.MCNO, s]));
-  const mappedMcnos = new Set(machines.filter(m => m.mcno != null).map(m => m.mcno));
-  const unmappedLive = live.filter(s => !mappedMcnos.has(s.MCNO));
+  // MCNO는 숫자로 통일하여 매칭
+  const liveByMcno = new Map(live.map(s => [Number(s.MCNO), s]));
+  const mappedMcnos = new Set(machines.filter(m => m.mcno != null).map(m => Number(m.mcno)));
+  const unmappedLive = live.filter(s => !mappedMcnos.has(Number(s.MCNO)));
 
   if (loading) {
     return (

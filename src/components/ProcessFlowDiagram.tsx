@@ -207,11 +207,9 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
         </div>
       </div>
       <div className="px-5 divide-y divide-gray-800/60">
-        <InfoRow label="금일 생산량"><span className="text-xl font-bold text-white">{process.dailyProduction.toLocaleString()}</span></InfoRow>
-        <InfoRow label="일 목표"><span className="text-gray-300">{process.dailyTarget.toLocaleString()}</span></InfoRow>
         <InfoRow label="현재 상태"><span className="flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${statusDot[ds]}`}/><span className="text-gray-200">{statusLabel[ds]}</span></span></InfoRow>
-        <InfoRow label="진행중 작업건수"><span className={`text-xl font-bold ${ds === 'RUN' && process.runCount > 0 ? 'text-emerald-300' : 'text-gray-500'}`}>{process.runCount > 0 ? `${process.runCount.toLocaleString()} ${getCountUnit(process.equipmentGroup)}` : '-'}</span></InfoRow>
-        <InfoRow label="금일 완료건수"><span className={`text-xl font-bold ${process.dayCompletedCount > 0 ? 'text-sky-300' : 'text-gray-500'}`}>{process.dayCompletedCount > 0 ? `${process.dayCompletedCount.toLocaleString()} ${getCountUnit(process.equipmentGroup)}` : '-'}</span></InfoRow>
+        <InfoRow label="진행중 작업량"><span className="text-sm text-gray-300">{process.runCount > 0 ? `${process.runCount.toLocaleString()} ${getCountUnit(process.equipmentGroup)}` : '-'}</span></InfoRow>
+        <InfoRow label="금일 완료량"><span className="text-sm text-gray-300">{process.dayCompletedCount > 0 ? `${process.dayCompletedCount.toLocaleString()} ${getCountUnit(process.equipmentGroup)}` : '-'}</span></InfoRow>
         <InfoRow label="금일 정지 사유">{process.stopReason?(<span className="flex items-center gap-1.5"><span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-xs font-medium border border-indigo-500/30">{process.stopReason}</span><span className="text-xs text-gray-400">{stopCodeNames[process.stopReason]||''}</span></span>):(<span className="text-gray-500">없음</span>)}</InfoRow>
       </div>
 

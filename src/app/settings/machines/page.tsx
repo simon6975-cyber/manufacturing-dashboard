@@ -45,6 +45,8 @@ export default function MachineSettingsPage() {
             : typeof s.TM === 'number'
               ? new Date(s.TM).toISOString()
               : String(s.TM || ''),
+          RUNCNT: typeof s.RUNCNT === 'number' ? s.RUNCNT : typeof s.RUNCNT === 'string' ? parseInt(s.RUNCNT, 10) || 0 : 0,
+          DAYCOMCNT: typeof s.DAYCOMCNT === 'number' ? s.DAYCOMCNT : typeof s.DAYCOMCNT === 'string' ? parseInt(s.DAYCOMCNT, 10) || 0 : 0,
         }));
         setLive(normalized);
         // fetchedAtIso도 Timestamp 객체일 수 있음
@@ -496,6 +498,12 @@ export default function MachineSettingsPage() {
                   </div>
                   <p className="text-gray-200 font-medium mt-0.5">{s.MCNM}</p>
                   <p className="text-gray-500 mt-0.5">{s.STATE} · {new Date(s.TM).toLocaleString('ko-KR')}</p>
+                  {(s.RUNCNT != null && s.RUNCNT > 0 || s.DAYCOMCNT != null && s.DAYCOMCNT > 0) && (
+                    <div className="flex items-center gap-3 mt-1 text-[10px]">
+                      {s.RUNCNT != null && s.RUNCNT > 0 && <span className="text-emerald-400">진행 <span className="font-bold font-mono">{s.RUNCNT.toLocaleString()}</span></span>}
+                      {s.DAYCOMCNT != null && s.DAYCOMCNT > 0 && <span className="text-sky-400">금일완료 <span className="font-bold font-mono">{s.DAYCOMCNT.toLocaleString()}</span></span>}
+                    </div>
+                  )}
                 </div>
               );
             })}

@@ -18,6 +18,8 @@ export interface MachineState {
   stopReason: string;
   statusChangedAt: Date;
   history: MachineHistoryEntry[];
+  runCount: number;        // 진행중 작업건수 (RUNCNT)
+  dayCompletedCount: number; // 금일 완료건수 (DAYCOMCNT)
 }
 
 // 터미널에서 상태 변경 시 Firebase 저장 (이력 포함)
@@ -49,6 +51,8 @@ export function subscribeMachines(
         stopReason: data.stopReason || '',
         statusChangedAt: data.statusChangedAt?.toDate() || new Date(),
         history: data.history || [],
+        runCount: typeof data.runCount === 'number' ? data.runCount : 0,
+        dayCompletedCount: typeof data.dayCompletedCount === 'number' ? data.dayCompletedCount : 0,
       };
     });
     callback(machines);
@@ -68,6 +72,8 @@ export function subscribeMachine(
         stopReason: data.stopReason || '',
         statusChangedAt: data.statusChangedAt?.toDate() || new Date(),
         history: data.history || [],
+        runCount: typeof data.runCount === 'number' ? data.runCount : 0,
+        dayCompletedCount: typeof data.dayCompletedCount === 'number' ? data.dayCompletedCount : 0,
       });
     } else {
       callback(null);

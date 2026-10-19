@@ -15,6 +15,8 @@ export interface DspmMachineState {
   MCNM: string;
   TM: string;    // ISO timestamp — 실측상 "상태가 마지막으로 바뀐 시각"에 가깝다(하트비트 아님, 며칠 전 값도 관측됨)
   STATE: string; // 'RUN' | 'IDLE' | 'S1'..'S9'
+  RUNCNT?: number;    // 진행중 작업건수 (페이지수/장수/부수 — 장비특성에 따라)
+  DAYCOMCNT?: number; // 금일 완료건수
 }
 
 interface DspmApiResponse {
@@ -133,6 +135,8 @@ export async function syncMachinesFromDspm(): Promise<SyncResult> {
       source: 'dspm-api',
       sourceMcno: def.mcno,
       sourceMcnm: real.MCNM,
+      runCount: real.RUNCNT ?? 0,
+      dayCompletedCount: real.DAYCOMCNT ?? 0,
     }, { merge: true });
 
     result.updated.push({ no: def.no, name: def.name, mcno: def.mcno, status, stopReason });

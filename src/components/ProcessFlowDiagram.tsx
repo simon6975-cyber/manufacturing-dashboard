@@ -36,13 +36,8 @@ interface DynamicEquipmentGroup {
 
 const DEFAULT_QUEUE_THRESHOLD = 5000;
 
-// 장비별 작업건수 단위 (equipmentGroup 기준)
-function getCountUnit(equipmentGroup: string): string {
-  if (/연속지출력|롤재단|낱장출력/.test(equipmentGroup)) return '페이지';
-  if (/코팅|에폭시|낱장재단/.test(equipmentGroup)) return '장';
-  if (/제본|중철|날개접지|시험지접지|포장/.test(equipmentGroup)) return '부';
-  return '건';
-}
+import { getCountUnit } from '@/lib/count-unit';
+import { saveDailyProduction, todayKST } from '@/lib/production-daily';
 
 // 3가지 상태만 표시 (SETUP→IDLE 병합)
 const statusConfig: Record<DisplayStatus, { banner:string; text:string; border:string; bar:string; icon:React.ComponentType<{className?:string}>|null }> = {
@@ -308,9 +303,23 @@ const ProcessFlowDiagram: React.FC = () => {
         }
       });
       setDspmByMcno(map);
+
+      // DAYCOMCNT → production_daily 자동 저장 (mcno→machineNo 매핑)
+      const date = todayKST();
+      Object.entries(machineDefs).forEach(([noStr, def]) => {
+        if (def.mcno == null) return;
+        const dspm = map[def.mcno];
+        if (dspm && dspm.dayCompletedCount > 0) {
+          saveDailyProduction(
+            def.no, def.name,
+            def.equipmentGroup || def.name.replace(/\s*\d+호기$/, '').replace(/\s+/g, ''),
+            def.group, dspm.dayCompletedCount, date,
+          ).catch(() => {});
+        }
+      });
     });
     return unsub;
-  }, []);
+  }, [machineDefs]);
 
   // 장비 정의에서 동적으로 장비군 생성
   const dynamicGroups: DynamicEquipmentGroup[] = useMemo(() => {

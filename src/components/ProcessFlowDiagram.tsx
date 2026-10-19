@@ -7,6 +7,8 @@ import { Play, Pause, AlertCircle, ChevronRight, RefreshCw, AlertTriangle, X, Cl
 import { subscribeMachines, MachineState, MachineHistoryEntry } from '@/lib/machine-service';
 import { useMachineDefs, MachineDef } from '@/lib/machine-defs';
 import { useStopCodes } from '@/lib/useStopCodes';
+import { db } from '@/lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 type Status = 'RUN' | 'IDLE' | 'STOP' | 'SETUP';
 type DisplayStatus = 'RUN' | 'IDLE' | 'STOP';
@@ -276,8 +278,31 @@ const ProcessFlowDiagram: React.FC = () => {
   const [firebaseStates, setFirebaseStates] = useState<Record<number,MachineState>>({});
   const { defs: machineDefs, allDefs } = useMachineDefs();
 
+  // DSPM 실시간 데이터 (dspm_live/snapshot → RUNCNT/DAYCOMCNT)
+  const [dspmByMcno, setDspmByMcno] = useState<Record<number, { runCount: number; dayCompletedCount: number }>>({});
+
   useEffect(()=>{ const i=setInterval(()=>setNow(Date.now()),1000); return()=>clearInterval(i); },[]);
   useEffect(()=>{ const u=subscribeMachines(s=>setFirebaseStates(s)); return u; },[]);
+
+  // dspm_live/snapshot 구독 — RUNCNT/DAYCOMCNT를 MCNO 기준으로 매핑
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'dspm_live', 'snapshot'), (snap) => {
+      if (!snap.exists()) return;
+      const rawList = Array.isArray(snap.data().data) ? snap.data().data : [];
+      const map: Record<number, { runCount: number; dayCompletedCount: number }> = {};
+      rawList.forEach((s: Record<string, unknown>) => {
+        const mcno = typeof s.MCNO === 'string' ? parseInt(s.MCNO, 10) : Number(s.MCNO) || 0;
+        if (mcno > 0) {
+          map[mcno] = {
+            runCount: typeof s.RUNCNT === 'number' ? s.RUNCNT : typeof s.RUNCNT === 'string' ? parseInt(s.RUNCNT, 10) || 0 : 0,
+            dayCompletedCount: typeof s.DAYCOMCNT === 'number' ? s.DAYCOMCNT : typeof s.DAYCOMCNT === 'string' ? parseInt(s.DAYCOMCNT, 10) || 0 : 0,
+          };
+        }
+      });
+      setDspmByMcno(map);
+    });
+    return unsub;
+  }, []);
 
   // 장비 정의에서 동적으로 장비군 생성
   const dynamicGroups: DynamicEquipmentGroup[] = useMemo(() => {
@@ -332,19 +357,25 @@ const ProcessFlowDiagram: React.FC = () => {
         group: def.group,
         equipmentGroup: def.equipmentGroup || def.name.replace(/\s*\d+호기$/, '').replace(/\s+/g, ''),
       };
+      // DSPM RUNCNT/DAYCOMCNT — machineDefs의 mcno로 dspmByMcno 조회
+      const defMcno = machineDefs[def.no]?.mcno;
+      const dspmData = defMcno != null ? dspmByMcno[defMcno] : undefined;
+      const runCount = dspmData?.runCount || 0;
+      const dayCompletedCount = dspmData?.dayCompletedCount || 0;
+
       if(fb){
         const elapsed = Math.max(0,Math.floor((now-fb.statusChangedAt.getTime())/1000));
         map[def.no] = {...base, status:fb.status, stopReason:fb.stopReason, initialElapsedSeconds:elapsed, history:fb.history||[],
           queue:toDisplay(fb.status)==='IDLE'?0:base.queue, queueCount:toDisplay(fb.status)==='IDLE'?0:base.queueCount,
           inProgress:toDisplay(fb.status)==='RUN'?base.inProgress:0, jobProgress:toDisplay(fb.status)==='RUN'?base.jobProgress:0,
-          runCount:fb.runCount||0, dayCompletedCount:fb.dayCompletedCount||0 };
+          runCount, dayCompletedCount };
       } else {
         const elapsed = base.initialElapsedSeconds+Math.floor((now-mountTimeRef.current)/1000);
-        map[def.no] = {...base, initialElapsedSeconds:elapsed};
+        map[def.no] = {...base, initialElapsedSeconds:elapsed, runCount, dayCompletedCount};
       }
     });
     return map;
-  },[firebaseStates,now,allDefs]);
+  },[firebaseStates,now,allDefs,dspmByMcno,machineDefs]);
 
   const totalMachines = allDefs.length;
 

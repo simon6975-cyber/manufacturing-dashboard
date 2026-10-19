@@ -36,6 +36,14 @@ interface DynamicEquipmentGroup {
 
 const DEFAULT_QUEUE_THRESHOLD = 5000;
 
+// 장비별 작업건수 단위
+function getCountUnit(name: string): string {
+  if (/연속지출력|롤재단|낱장출력/.test(name)) return '페이지';
+  if (/코팅|에폭시|낱장재단/.test(name)) return '장';
+  if (/제본|중철|날개접지|시험지접지|박스포장|댐지포장/.test(name)) return '부';
+  return '건';
+}
+
 // 3가지 상태만 표시 (SETUP→IDLE 병합)
 const statusConfig: Record<DisplayStatus, { banner:string; text:string; border:string; bar:string; icon:React.ComponentType<{className?:string}>|null }> = {
   RUN:  { banner:'bg-emerald-400', text:'text-emerald-950', border:'border-emerald-400/40', bar:'bg-emerald-400', icon:null },
@@ -207,8 +215,8 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
         <InfoRow label="금일 생산량"><span className="text-xl font-bold text-white">{process.dailyProduction.toLocaleString()}</span></InfoRow>
         <InfoRow label="일 목표"><span className="text-gray-300">{process.dailyTarget.toLocaleString()}</span></InfoRow>
         <InfoRow label="현재 상태"><span className="flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${statusDot[ds]}`}/><span className="text-gray-200">{statusLabel[ds]}</span></span></InfoRow>
-        <InfoRow label="진행중 작업건수"><span className={`text-xl font-bold ${ds === 'RUN' && process.runCount > 0 ? 'text-emerald-300' : 'text-gray-500'}`}>{process.runCount > 0 ? process.runCount.toLocaleString() : '-'}</span></InfoRow>
-        <InfoRow label="금일 완료건수"><span className={`text-xl font-bold ${process.dayCompletedCount > 0 ? 'text-sky-300' : 'text-gray-500'}`}>{process.dayCompletedCount > 0 ? process.dayCompletedCount.toLocaleString() : '-'}</span></InfoRow>
+        <InfoRow label="진행중 작업건수"><span className={`text-xl font-bold ${ds === 'RUN' && process.runCount > 0 ? 'text-emerald-300' : 'text-gray-500'}`}>{process.runCount > 0 ? `${process.runCount.toLocaleString()} ${getCountUnit(process.name)}` : '-'}</span></InfoRow>
+        <InfoRow label="금일 완료건수"><span className={`text-xl font-bold ${process.dayCompletedCount > 0 ? 'text-sky-300' : 'text-gray-500'}`}>{process.dayCompletedCount > 0 ? `${process.dayCompletedCount.toLocaleString()} ${getCountUnit(process.name)}` : '-'}</span></InfoRow>
         <InfoRow label="금일 정지 사유">{process.stopReason?(<span className="flex items-center gap-1.5"><span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-xs font-medium border border-indigo-500/30">{process.stopReason}</span><span className="text-xs text-gray-400">{stopCodeNames[process.stopReason]||''}</span></span>):(<span className="text-gray-500">없음</span>)}</InfoRow>
       </div>
 

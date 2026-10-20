@@ -2,7 +2,7 @@
 // Vercel Cron: 매일 23:55 KST에 dspm_live/snapshot → production_daily 저장
 // 수동 호출도 가능 (GET /api/cron/save-daily-production)
 import { NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebase-admin';
+import { getAdminDb } from '@/lib/firebase-admin';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30; // 최대 30초
@@ -40,6 +40,8 @@ export async function GET(request: Request) {
     const date = todayKST();
 
     // 1. dspm_live/snapshot에서 현재 데이터 읽기
+    const adminDb = getAdminDb();
+
     const snapshotDoc = await adminDb.doc('dspm_live/snapshot').get();
     if (!snapshotDoc.exists) {
       return NextResponse.json({ ok: false, error: 'dspm_live/snapshot not found', date });
@@ -107,9 +109,16 @@ export async function GET(request: Request) {
       message: `${savedCount}개 장비 생산량 저장 완료`,
     });
   } catch (err) {
-    console.error('save-daily-production error:', err);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error('save-daily-production error:', errMsg);
     return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      {
+        ok: false,
+        error: errMsg,
+        hint: errMsg.includes('Project Id') || errMsg.includes('credential')
+          ? 'Vercel 환경변수 FIREBASE_SERVICE_ACCOUNT_KEY가 올바르게 설정되었는지 확인하세요.'
+          : undefined,
+      },
       { status: 500 },
     );
   }

@@ -145,11 +145,11 @@ export default function EquipmentSummaryPage() {
           <thead>
             <tr className="border-b border-gray-800">
               <th className="text-left text-[11px] text-gray-500 font-medium px-4 py-3 w-16">NO</th>
-              <th className="text-left text-[11px] text-gray-500 font-medium px-4 py-3">장비명</th>
+              <th className="text-left text-[11px] text-gray-500 font-medium px-4 py-3 w-48">장비명</th>
               <th className="text-left text-[11px] text-gray-500 font-medium px-4 py-3 w-20">공정</th>
               <th className="text-left text-[11px] text-gray-500 font-medium px-4 py-3 w-28">장비군</th>
               <th className="text-right text-[11px] text-gray-500 font-medium px-4 py-3 w-40">금일 완료건수</th>
-              <th className="text-center text-[11px] text-gray-500 font-medium px-4 py-3 w-16">단위</th>
+              <th className="text-center text-[11px] text-gray-500 font-medium px-4 py-3 w-20">단위</th>
             </tr>
           </thead>
           <tbody>

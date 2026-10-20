@@ -2,35 +2,45 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { CalendarDays, Search, BarChart3 } from 'lucide-react';
-import { getDailyProduction, todayKST, DailyProductionEntry } from '@/lib/production-daily';
+import { CalendarDays, Search } from 'lucide-react';
+import { getDailyProduction, todayKST, saveDailyProduction, DailyProductionEntry } from '@/lib/production-daily';
 import { useMachineDefs } from '@/lib/machine-defs';
 import { getCountUnit } from '@/lib/count-unit';
+import { db } from '@/lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 type ViewMode = 'daily' | 'weekly' | 'monthly';
 
-// 날짜 범위 생성 유틸
+// 날짜 범위 생성 — 순수 문자열 연산 (UTC 변환 없음)
 function getDateRange(start: string, end: string): string[] {
   const dates: string[] = [];
-  const cur = new Date(start + 'T00:00:00+09:00');
-  const endD = new Date(end + 'T00:00:00+09:00');
-  while (cur <= endD) {
-    dates.push(cur.toISOString().slice(0, 10));
-    cur.setDate(cur.getDate() + 1);
+  let [y, m, d] = start.split('-').map(Number);
+  const toStr = (yy: number, mm: number, dd: number) =>
+    `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  const daysInMonth = (yy: number, mm: number) => new Date(yy, mm, 0).getDate();
+
+  let cur = toStr(y, m, d);
+  while (cur <= end) {
+    dates.push(cur);
+    d++;
+    if (d > daysInMonth(y, m)) { d = 1; m++; if (m > 12) { m = 1; y++; } }
+    cur = toStr(y, m, d);
   }
   return dates;
 }
 
 // 이번 주 월~일 범위
 function thisWeekRange(): [string, string] {
-  const now = new Date();
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const day = kst.getUTCDay(); // 0=sun
-  const mon = new Date(kst);
-  mon.setUTCDate(kst.getUTCDate() - (day === 0 ? 6 : day - 1));
-  const sun = new Date(mon);
-  sun.setUTCDate(mon.getUTCDate() + 6);
-  return [mon.toISOString().slice(0, 10), sun.toISOString().slice(0, 10)];
+  const today = todayKST();
+  const [y, m, d] = today.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const day = dt.getDay(); // 0=sun
+  const monOffset = day === 0 ? -6 : 1 - day;
+  const monDt = new Date(y, m - 1, d + monOffset);
+  const sunDt = new Date(y, m - 1, d + monOffset + 6);
+  const fmt = (dd: Date) =>
+    `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}`;
+  return [fmt(monDt), fmt(sunDt)];
 }
 
 // 이번 달 범위
@@ -43,26 +53,65 @@ function thisMonthRange(): [string, string] {
 export default function PeriodSummaryPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('daily');
   const [startDate, setStartDate] = useState(() => {
-    // 기본: 최근 7일
-    const d = new Date();
-    d.setDate(d.getDate() - 6);
-    const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
-    return kst.toISOString().slice(0, 10);
+    const today = todayKST();
+    const [y, m, d] = today.split('-').map(Number);
+    const dt = new Date(y, m - 1, d - 6);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
   });
   const [endDate, setEndDate] = useState(todayKST());
   const [allEntries, setAllEntries] = useState<DailyProductionEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const { allDefs } = useMachineDefs();
+  const { defs: machineDefs, allDefs } = useMachineDefs();
+
+  // DSPM 실시간 데이터 (오늘이 범위에 포함된 경우)
+  const [dspmByMcno, setDspmByMcno] = useState<Record<number, number>>({});
+  const todayStr = todayKST();
+  const includesToday = useMemo(() => {
+    return todayStr >= startDate && todayStr <= endDate;
+  }, [startDate, endDate, todayStr]);
+
+  // dspm_live/snapshot 실시간 구독 + production_daily 자동저장
+  useEffect(() => {
+    if (!includesToday) { setDspmByMcno({}); return; }
+    const unsub = onSnapshot(doc(db, 'dspm_live', 'snapshot'), (snap) => {
+      if (!snap.exists()) return;
+      const rawList = Array.isArray(snap.data().data) ? snap.data().data : [];
+      const map: Record<number, number> = {};
+      rawList.forEach((s: Record<string, unknown>) => {
+        const mcno = typeof s.MCNO === 'string' ? parseInt(s.MCNO, 10) : Number(s.MCNO) || 0;
+        if (mcno > 0) {
+          map[mcno] = typeof s.DAYCOMCNT === 'number' ? s.DAYCOMCNT
+            : typeof s.DAYCOMCNT === 'string' ? parseInt(s.DAYCOMCNT, 10) || 0 : 0;
+        }
+      });
+      setDspmByMcno(map);
+
+      // production_daily 자동저장
+      const date = todayKST();
+      Object.entries(machineDefs).forEach(([, def]) => {
+        if (def.mcno == null) return;
+        const dspm = map[def.mcno];
+        if (dspm && dspm > 0) {
+          saveDailyProduction(
+            def.no, def.name,
+            def.equipmentGroup || def.name.replace(/\s*\d+호기$/, '').replace(/\s+/g, ''),
+            def.group, dspm, date,
+          ).catch(() => {});
+        }
+      });
+    });
+    return unsub;
+  }, [includesToday, machineDefs]);
 
   // 프리셋 적용
   const applyPreset = useCallback((mode: ViewMode) => {
     setViewMode(mode);
     if (mode === 'daily') {
-      const d = new Date();
-      d.setDate(d.getDate() - 6);
-      const kst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
-      setStartDate(kst.toISOString().slice(0, 10));
-      setEndDate(todayKST());
+      const today = todayKST();
+      const [y, m, d] = today.split('-').map(Number);
+      const dt = new Date(y, m - 1, d - 6);
+      setStartDate(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`);
+      setEndDate(today);
     } else if (mode === 'weekly') {
       const [s, e] = thisWeekRange();
       setStartDate(s);
@@ -80,7 +129,6 @@ export default function PeriodSummaryPage() {
     try {
       const dates = getDateRange(startDate, endDate);
       const results: DailyProductionEntry[] = [];
-      // 병렬 로드 (최대 31일)
       const batches = await Promise.all(dates.map(d => getDailyProduction(d)));
       batches.forEach(b => results.push(...b));
       setAllEntries(results);
@@ -94,40 +142,60 @@ export default function PeriodSummaryPage() {
   // 날짜 목록
   const dateList = useMemo(() => getDateRange(startDate, endDate), [startDate, endDate]);
 
-  // 날짜 × 장비 피벗 테이블
+  // 날짜 × 장비 피벗 테이블 — 오늘은 DSPM 실시간 데이터 우선
   const pivotData = useMemo(() => {
-    // { [date]: { [machineNo]: count } }
     const map: Record<string, Record<number, number>> = {};
     dateList.forEach(d => { map[d] = {}; });
+
+    // Firestore 저장 데이터
     allEntries.forEach(e => {
       if (!map[e.date]) map[e.date] = {};
       map[e.date][e.machineNo] = e.dayCompletedCount;
     });
+
+    // 오늘: DSPM 실시간 값으로 덮어쓰기
+    if (includesToday && map[todayStr]) {
+      allDefs.forEach(def => {
+        if (def.mcno != null && dspmByMcno[def.mcno] != null && dspmByMcno[def.mcno] > 0) {
+          map[todayStr][def.no] = dspmByMcno[def.mcno];
+        }
+      });
+    }
+
     return map;
-  }, [allEntries, dateList]);
+  }, [allEntries, dateList, includesToday, todayStr, dspmByMcno, allDefs]);
 
   // 장비별 합계
   const machineTotals = useMemo(() => {
     const totals: Record<number, number> = {};
     allDefs.forEach(d => { totals[d.no] = 0; });
-    allEntries.forEach(e => { totals[e.machineNo] = (totals[e.machineNo] || 0) + e.dayCompletedCount; });
+    dateList.forEach(d => {
+      allDefs.forEach(def => {
+        totals[def.no] = (totals[def.no] || 0) + (pivotData[d]?.[def.no] || 0);
+      });
+    });
     return totals;
-  }, [allEntries, allDefs]);
+  }, [pivotData, dateList, allDefs]);
 
   // 날짜별 합계
   const dateTotals = useMemo(() => {
     const totals: Record<string, number> = {};
-    dateList.forEach(d => { totals[d] = 0; });
-    allEntries.forEach(e => { totals[e.date] = (totals[e.date] || 0) + e.dayCompletedCount; });
+    dateList.forEach(d => {
+      totals[d] = 0;
+      allDefs.forEach(def => {
+        totals[d] += pivotData[d]?.[def.no] || 0;
+      });
+    });
     return totals;
-  }, [allEntries, dateList]);
+  }, [pivotData, dateList, allDefs]);
 
   const dayLabel = (dateStr: string) => {
-    const d = new Date(dateStr + 'T00:00:00+09:00');
-    return ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    return ['일', '월', '화', '수', '목', '금', '토'][dt.getDay()];
   };
 
-  const grandTotal = allEntries.reduce((s, e) => s + e.dayCompletedCount, 0);
+  const grandTotal = Object.values(machineTotals).reduce((s, v) => s + v, 0);
 
   return (
     <div className="flex-1 p-6 overflow-y-auto">
@@ -146,7 +214,6 @@ export default function PeriodSummaryPage() {
 
       {/* 컨트롤 바 */}
       <div className="flex items-center gap-3 mb-6 flex-wrap">
-        {/* 보기 모드 */}
         <div className="flex rounded-lg overflow-hidden border border-gray-700">
           {(['daily', 'weekly', 'monthly'] as ViewMode[]).map(m => (
             <button key={m} onClick={() => applyPreset(m)}
@@ -156,7 +223,6 @@ export default function PeriodSummaryPage() {
           ))}
         </div>
 
-        {/* 커스텀 날짜 */}
         <div className="flex items-center gap-2">
           <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
             className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-sm text-gray-200 focus:outline-none focus:border-blue-500" />

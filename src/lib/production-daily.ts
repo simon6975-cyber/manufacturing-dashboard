@@ -77,15 +77,19 @@ export async function getDailyProductionRange(
   endDate: string,
 ): Promise<DailyProductionEntry[]> {
   const result: DailyProductionEntry[] = [];
-  // 날짜별로 순회
-  const start = new Date(startDate + 'T00:00:00+09:00');
-  const end = new Date(endDate + 'T00:00:00+09:00');
-  const current = new Date(start);
-  while (current <= end) {
-    const dateStr = current.toISOString().slice(0, 10);
-    const entries = await getDailyProduction(dateStr);
+  // 순수 문자열 기반 날짜 순회 (UTC 변환 없음)
+  let [y, m, d] = startDate.split('-').map(Number);
+  const toStr = (yy: number, mm: number, dd: number) =>
+    `${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  const daysInMonth = (yy: number, mm: number) => new Date(yy, mm, 0).getDate();
+
+  let cur = toStr(y, m, d);
+  while (cur <= endDate) {
+    const entries = await getDailyProduction(cur);
     result.push(...entries);
-    current.setDate(current.getDate() + 1);
+    d++;
+    if (d > daysInMonth(y, m)) { d = 1; m++; if (m > 12) { m = 1; y++; } }
+    cur = toStr(y, m, d);
   }
   return result;
 }

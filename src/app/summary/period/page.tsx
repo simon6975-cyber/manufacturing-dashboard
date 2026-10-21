@@ -123,15 +123,30 @@ export default function PeriodSummaryPage() {
     }
   }, []);
 
-  // 데이터 로드
+  // 데이터 로드 — 서버 API 경유 (Admin SDK, 보안 규칙 우회)
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const dates = getDateRange(startDate, endDate);
-      const results: DailyProductionEntry[] = [];
-      const batches = await Promise.all(dates.map(d => getDailyProduction(d)));
-      batches.forEach(b => results.push(...b));
-      setAllEntries(results);
+      const res = await fetch(`/api/production-daily?start=${startDate}&end=${endDate}`);
+      const json = await res.json();
+      if (json.ok && Array.isArray(json.entries)) {
+        setAllEntries(json.entries.map((e: Record<string, unknown>) => ({
+          machineNo: e.machineNo as number,
+          machineName: (e.machineName ?? '') as string,
+          equipmentGroup: (e.equipmentGroup ?? '') as string,
+          group: (e.group ?? '') as string,
+          dayCompletedCount: (e.dayCompletedCount ?? 0) as number,
+          date: (e.date ?? '') as string,
+          updatedAt: new Date(),
+        })));
+      } else {
+        // API 실패 시 클라이언트 직접 조회 폴백
+        const dates = getDateRange(startDate, endDate);
+        const results: DailyProductionEntry[] = [];
+        const batches = await Promise.all(dates.map(d => getDailyProduction(d)));
+        batches.forEach(b => results.push(...b));
+        setAllEntries(results);
+      }
     } finally {
       setLoading(false);
     }

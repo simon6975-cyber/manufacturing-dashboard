@@ -99,7 +99,8 @@ function useStatusEvents(machineNo: number, date: string) {
       .then(res => res.json())
       .then(data => {
         if (cancelled) return;
-        const machineData = (data || []).find((m: { machineNo: number }) => m.machineNo === machineNo);
+        const list = data?.entries || data || [];
+        const machineData = (Array.isArray(list) ? list : []).find((m: { machineNo: number }) => m.machineNo === machineNo);
         setEvents(machineData?.events || []);
         setLoading(false);
       })

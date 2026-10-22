@@ -200,7 +200,7 @@ export async function accumulateStatusDuration(params: {
 /**
  * 진행 중인 상태의 시간 누적 (상태 변경 없을 때).
  * lastAccumulatedAt ~ now까지의 시간을 현재 상태에 더함.
- * 이벤트 로그는 남기지 않음(연속 시간 보정이므로).
+ * 이벤트 로그도 남김 (같은 날짜에 이미 동일 상태 ongoing 이벤트가 있으면 병합).
  * count는 증가하지 않음(동일 상태 유지 중이므로).
  */
 export async function accumulateOngoingStatus(params: {
@@ -222,12 +222,60 @@ export async function accumulateOngoingStatus(params: {
   const segments = splitByKSTDay(lastAccumulatedAt, clampedEnd);
 
   for (const seg of segments) {
-    await addDurationToDate({
-      date: seg.date,
-      machineNo, machineName, key,
-      durationSeconds: seg.durationSeconds,
-      addCount: 0, // 진행 중 누적이므로 횟수 증가 없음
-    });
+    // 진행 중 누적도 이벤트 로그를 남겨 이력 조회 가능하게 함
+    // 같은 날짜의 마지막 이벤트가 동일 상태면 endTime/duration만 확장
+    const adminDb = getAdminDb();
+    const ref = adminDb.doc(`machine_status_daily/${seg.date}/machines/${machineNo}`);
+    const snap = await ref.get();
+    const existingEvents: StatusEvent[] = snap.exists ? (snap.data()!.events || []) : [];
+
+    // 마지막 이벤트가 동일 상태이면 병합 (endTime 확장)
+    const lastEvent = existingEvents.length > 0 ? existingEvents[existingEvents.length - 1] : null;
+    if (lastEvent && lastEvent.state === key) {
+      // 기존 이벤트의 endTime 확장
+      lastEvent.endTime = hhmmssKST(seg.endMs);
+      lastEvent.endTimestamp = seg.endMs;
+      lastEvent.durationSeconds = Math.round((seg.endMs - lastEvent.startTimestamp) / 1000);
+
+      // events 배열만 업데이트 (states 누적은 아래에서)
+      const states = snap.exists ? (snap.data()!.states || {}) : {};
+      const prev: StateAccum = states[key] || { totalSeconds: 0, count: 0 };
+      states[key] = {
+        totalSeconds: prev.totalSeconds + seg.durationSeconds,
+        count: prev.count, // 횟수 증가 없음
+      };
+
+      if (snap.exists) {
+        await ref.update({
+          states,
+          events: existingEvents,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      } else {
+        await ref.set({
+          machineNo, machineName, date: seg.date,
+          states, events: existingEvents,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+    } else {
+      // 새 이벤트 추가
+      const event: StatusEvent = {
+        state: key,
+        startTime: hhmmssKST(seg.startMs),
+        startTimestamp: seg.startMs,
+        endTime: hhmmssKST(seg.endMs),
+        endTimestamp: seg.endMs,
+        durationSeconds: seg.durationSeconds,
+      };
+      await addDurationToDate({
+        date: seg.date,
+        machineNo, machineName, key,
+        durationSeconds: seg.durationSeconds,
+        addCount: 0,
+        event,
+      });
+    }
   }
 }
 

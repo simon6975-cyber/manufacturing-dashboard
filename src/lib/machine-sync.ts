@@ -140,11 +140,12 @@ export async function syncMachinesFromDspm(): Promise<SyncResult> {
       continue;
     }
 
+    const detectedAt = new Date(); // 실제 감지 시각 사용 (DSPM TM은 부정확할 수 있음)
     const entry: MachineHistoryEntry = {
       status,
       stopCode: stopReason,
-      time: hhmmss(reportedAt),
-      timestamp: reportedAt.getTime(),
+      time: hhmmss(detectedAt),
+      timestamp: detectedAt.getTime(),
     };
     const prevHistory: MachineHistoryEntry[] = prev?.history || [];
     const newHistory = [entry, ...prevHistory].slice(0, 50);

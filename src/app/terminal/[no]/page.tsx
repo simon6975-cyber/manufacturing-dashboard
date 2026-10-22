@@ -1,10 +1,10 @@
 // src/app/terminal/[no]/page.tsx
 'use client';
 
-import React, { useState, useEffect, useRef, use } from 'react';
+import React, { useState, useEffect, useRef, use, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Play, Square, AlertTriangle, Clock, ChevronDown,
+  Play, Square, AlertTriangle, Clock, ChevronDown, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { updateMachineStatus, subscribeMachine, MachineStatus, MachineHistoryEntry } from '@/lib/machine-service';
 import { useMachineDefs, DEFAULT_MACHINES } from '@/lib/machine-defs';
@@ -61,6 +61,118 @@ function formatTime(sec: number): string {
 function nowStr(): string {
   const d = new Date();
   return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`;
+}
+
+function formatDurationSec(sec: number): string {
+  if (sec < 60) return `${sec}초`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}분 ${sec % 60}초`;
+  return `${Math.floor(sec / 3600)}시간 ${Math.floor((sec % 3600) / 60)}분`;
+}
+
+function kstTodayStr(): string {
+  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}
+
+function shiftDate(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+interface StatusEvent {
+  state: string;
+  startTime: string;
+  startTimestamp: number;
+  endTime: string;
+  endTimestamp: number;
+  durationSeconds: number;
+}
+
+function useStatusEvents(machineNo: number, date: string) {
+  const [events, setEvents] = useState<StatusEvent[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/status-daily?date=${date}`)
+      .then(res => res.json())
+      .then(data => {
+        if (cancelled) return;
+        const machineData = (data || []).find((m: { machineNo: number }) => m.machineNo === machineNo);
+        setEvents(machineData?.events || []);
+        setLoading(false);
+      })
+      .catch(() => { if (!cancelled) { setEvents([]); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [machineNo, date]);
+  return { events, loading };
+}
+
+function TerminalStatusHistory({ machineNo, stopCodeMap }: { machineNo: number; stopCodeMap: Record<string, string> }) {
+  const [historyDate, setHistoryDate] = useState(kstTodayStr);
+  const { events, loading } = useStatusEvents(machineNo, historyDate);
+  const isToday = historyDate === kstTodayStr();
+  const sortedEvents = useMemo(() => [...events].sort((a, b) => b.startTimestamp - a.startTimestamp), [events]);
+
+  const cMap: Record<string, string> = {
+    RUN: 'bg-emerald-900/40 text-emerald-300',
+    IDLE: 'bg-amber-900/40 text-amber-300',
+    STOP: 'bg-rose-900/40 text-rose-300',
+  };
+  const stateLabel = (state: string) => {
+    if (state === 'RUN' || state === 'IDLE') return state;
+    if (/^S\d+$/.test(state)) return 'STOP';
+    return state;
+  };
+
+  return (
+    <div className="flex-1">
+      <div className="flex items-center justify-between mb-2 px-1">
+        <h3 className="text-xs text-gray-500 uppercase tracking-wider">
+          상태 변경 이력 {sortedEvents.length > 0 && <span className="text-gray-600">({sortedEvents.length})</span>}
+        </h3>
+        <div className="flex items-center gap-1">
+          <button onClick={() => setHistoryDate(shiftDate(historyDate, -1))}
+            className="p-1 text-gray-500 hover:text-gray-300 hover:bg-gray-800 rounded transition-colors">
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={() => setHistoryDate(kstTodayStr())}
+            className={`px-2 py-0.5 text-[11px] font-mono rounded transition-colors ${isToday ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800 border border-gray-700'}`}>
+            {historyDate.slice(5)}
+          </button>
+          <button onClick={() => { if (!isToday) setHistoryDate(shiftDate(historyDate, 1)); }}
+            disabled={isToday}
+            className={`p-1 rounded transition-colors ${isToday ? 'text-gray-700 cursor-not-allowed' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'}`}>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {loading ? (
+          <p className="text-sm text-gray-600 text-center py-4">로딩 중...</p>
+        ) : sortedEvents.length === 0 ? (
+          <p className="text-sm text-gray-600 text-center py-4">{historyDate} 이력 없음</p>
+        ) : sortedEvents.map((ev, i) => {
+          const sl = stateLabel(ev.state);
+          return (
+            <div key={i} className="bg-gray-900/60 rounded-lg px-3 py-2.5 border border-gray-800/50">
+              <div className="flex items-center gap-3">
+                <span className={`text-xs font-bold px-2 py-0.5 rounded ${cMap[sl] || cMap.IDLE}`}>{sl}</span>
+                {/^S\d+$/.test(ev.state) && <span className="text-xs text-rose-400">{ev.state} {stopCodeMap[ev.state] || ''}</span>}
+                <span className="text-xs text-gray-300 font-bold ml-auto font-mono">{formatDurationSec(ev.durationSeconds)}</span>
+              </div>
+              <div className="flex items-center gap-1 mt-1 text-[10px] text-gray-500 font-mono pl-1">
+                <span>{ev.startTime}</span>
+                <span className="text-gray-700">→</span>
+                <span>{ev.endTime}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export default function TerminalPage({ params }: { params: Promise<{ no: string }> }) {
@@ -225,26 +337,8 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
           </button>
         </div>
 
-        {/* 상태 변경 이력 */}
-        <div className="flex-1">
-          <h3 className="text-xs text-gray-500 uppercase tracking-wider mb-2 px-1">
-            상태 변경 이력 {history.length > 0 && <span className="text-gray-600">({history.length})</span>}
-          </h3>
-          <div className="space-y-1.5">
-            {history.length === 0 ? (
-              <p className="text-sm text-gray-600 text-center py-4">아직 상태 변경 이력이 없습니다</p>
-            ) : history.map((h, i) => {
-              const hCfg = BTN_CONFIG[h.status];
-              return (
-                <div key={i} className="flex items-center gap-3 bg-gray-900/60 rounded-lg px-3 py-2.5 border border-gray-800/50">
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${hCfg.bg} ${hCfg.text}`}>{hCfg.label}</span>
-                  {h.stopCode && <span className="text-xs text-rose-400">{h.stopCode} {stopCodeMap[h.stopCode]}</span>}
-                  <span className="text-xs text-gray-500 ml-auto font-mono">{h.time}</span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        {/* 상태 변경 이력 — machine_status_daily 기반 */}
+        <TerminalStatusHistory machineNo={machineNo} stopCodeMap={stopCodeMap} />
       </div>
 
       {/* STOP 코드 선택 모달 */}

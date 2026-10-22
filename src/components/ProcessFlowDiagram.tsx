@@ -1,9 +1,9 @@
 // src/components/ProcessFlowDiagram.tsx
 'use client';
 
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts';
-import { Play, Pause, AlertCircle, ChevronRight, RefreshCw, AlertTriangle, X, Clock } from 'lucide-react';
+import { Play, Pause, AlertCircle, ChevronRight, ChevronLeft, RefreshCw, AlertTriangle, X, Clock, Calendar } from 'lucide-react';
 import { subscribeMachines, MachineState, MachineHistoryEntry } from '@/lib/machine-service';
 import { useMachineDefs, MachineDef } from '@/lib/machine-defs';
 import { useStopCodes } from '@/lib/useStopCodes';
@@ -53,6 +53,38 @@ const statusDot: Record<DisplayStatus,string> = { RUN:'bg-emerald-400', IDLE:'bg
 // ============================================
 function formatElapsed(s:number) { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60; return`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
 function formatDuration(ms:number) { const s=Math.floor(ms/1000); if(s<60)return`${s}초`; if(s<3600)return`${Math.floor(s/60)}분 ${s%60}초`; return`${Math.floor(s/3600)}시간 ${Math.floor((s%3600)/60)}분`; }
+function formatDurationSec(sec:number) { if(sec<60)return`${sec}초`; if(sec<3600)return`${Math.floor(sec/60)}분 ${sec%60}초`; return`${Math.floor(sec/3600)}시간 ${Math.floor((sec%3600)/60)}분`; }
+function kstTodayStr(): string { const kst=new Date(Date.now()+9*60*60*1000); return kst.toISOString().slice(0,10); }
+function shiftDate(dateStr:string, days:number): string { const [y,m,d]=dateStr.split('-').map(Number); const dt=new Date(Date.UTC(y,m-1,d+days)); return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth()+1).padStart(2,'0')}-${String(dt.getUTCDate()).padStart(2,'0')}`; }
+
+interface StatusEvent {
+  state: string;
+  startTime: string;
+  startTimestamp: number;
+  endTime: string;
+  endTimestamp: number;
+  durationSeconds: number;
+}
+
+function useStatusEvents(machineNo: number, date: string) {
+  const [events, setEvents] = useState<StatusEvent[]>([]);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetch(`/api/status-daily?date=${date}`)
+      .then(res => res.json())
+      .then(data => {
+        if (cancelled) return;
+        const machineData = (data || []).find((m: { machineNo: number }) => m.machineNo === machineNo);
+        setEvents(machineData?.events || []);
+        setLoading(false);
+      })
+      .catch(() => { if (!cancelled) { setEvents([]); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [machineNo, date]);
+  return { events, loading };
+}
 const DAY_LABELS = ['화','수','목','금','토','일','월'];
 function getLast7Days(base:number,seed:number) { return DAY_LABELS.map((day,i)=>({day,value:Math.round(base*((i===4||i===5)?0.28+((seed+i)%8)/100:0.9+((seed*3+i*17)%18)/100))})); }
 function getMonthlyTotal(d:number,s:number) { return Math.round(d*20.5+s*211); }
@@ -187,13 +219,36 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
   const monthly = useMemo(()=>getMonthlyTotal(process.dailyProduction,process.no),[process]);
   const rate = getAchievementRate(monthly,process.dailyTarget);
 
-  const historyWithDuration = useMemo(()=>{
-    return process.history.map((h,i)=>{
-      const nextTs = i===0 ? now : process.history[i-1].timestamp;
-      const duration = nextTs - h.timestamp;
-      return { ...h, duration };
-    });
-  },[process.history, now]);
+  // 상태 이력: machine_status_daily에서 가져오기 (정확한 시작/종료/소요시간)
+  const [historyDate, setHistoryDate] = useState(kstTodayStr);
+  const { events, loading: eventsLoading } = useStatusEvents(process.no, historyDate);
+  const isToday = historyDate === kstTodayStr();
+
+  // 이벤트를 최신순으로 정렬
+  const sortedEvents = useMemo(() => [...events].sort((a, b) => b.startTimestamp - a.startTimestamp), [events]);
+
+  const cMap: Record<string,string> = {
+    RUN:'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+    IDLE:'bg-amber-400/15 text-amber-300 border-amber-400/30',
+    STOP:'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    SETUP:'bg-sky-500/15 text-sky-300 border-sky-500/30',
+    S1:'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    S2:'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    S3:'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    S4:'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    S5:'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    S6:'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    S7:'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    S8:'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    S9:'bg-rose-500/15 text-rose-300 border-rose-500/30',
+  };
+
+  // 상태 표시 레이블
+  const stateLabel = (state: string) => {
+    if (state === 'RUN' || state === 'IDLE') return state;
+    if (/^S\d+$/.test(state)) return 'STOP';
+    return state;
+  };
 
   return (<>
     <div className="fixed inset-0 bg-black/60 z-40" onClick={onClose}/>
@@ -213,24 +268,58 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
         <InfoRow label="금일 정지 사유">{process.stopReason?(<span className="flex items-center gap-1.5"><span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-xs font-medium border border-indigo-500/30">{process.stopReason}</span><span className="text-xs text-gray-400">{stopCodeNames[process.stopReason]||''}</span></span>):(<span className="text-gray-500">없음</span>)}</InfoRow>
       </div>
 
-      {historyWithDuration.length > 0 && (
-        <div className="px-5 pt-4 pb-2">
-          <h3 className="text-sm font-bold text-gray-200 mb-2 flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-gray-500"/>상태 변경 이력</h3>
-          <div className="space-y-1 max-h-48 overflow-y-auto">
-            {historyWithDuration.slice(0,30).map((h,i)=>{
-              const cMap: Record<string,string> = { RUN:'bg-emerald-500/15 text-emerald-300 border-emerald-500/30', IDLE:'bg-amber-400/15 text-amber-300 border-amber-400/30', STOP:'bg-rose-500/15 text-rose-300 border-rose-500/30', SETUP:'bg-sky-500/15 text-sky-300 border-sky-500/30' };
-              return (
-                <div key={i} className="flex items-center gap-2 py-1.5 px-2 rounded bg-gray-900/40">
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${cMap[h.status]||cMap.IDLE}`}>{h.status==='SETUP'?'CANCEL':h.status}</span>
-                  {h.stopCode&&<span className="text-[11px] text-rose-400">{h.stopCode} {stopCodeNames[h.stopCode]||''}</span>}
-                  <span className="text-[11px] text-gray-500 ml-auto font-mono">{h.time}</span>
-                  <span className="text-[10px] text-gray-600 font-mono">{formatDuration(h.duration)}</span>
-                </div>
-              );
-            })}
+      {/* 상태 변경 이력 — machine_status_daily 기반 */}
+      <div className="px-5 pt-4 pb-2">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-bold text-gray-200 flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5 text-gray-500"/>상태 변경 이력
+          </h3>
+          <div className="flex items-center gap-1">
+            <button onClick={()=>setHistoryDate(shiftDate(historyDate,-1))}
+              className="p-1 text-gray-500 hover:text-gray-300 hover:bg-gray-800 rounded transition-colors">
+              <ChevronLeft className="w-3.5 h-3.5"/>
+            </button>
+            <button onClick={()=>setHistoryDate(kstTodayStr())}
+              className={`px-2 py-0.5 text-[11px] font-mono rounded transition-colors ${isToday ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800 border border-gray-700'}`}>
+              {historyDate.slice(5)}
+            </button>
+            <button onClick={()=>{ if(!isToday) setHistoryDate(shiftDate(historyDate,1)); }}
+              disabled={isToday}
+              className={`p-1 rounded transition-colors ${isToday ? 'text-gray-700 cursor-not-allowed' : 'text-gray-500 hover:text-gray-300 hover:bg-gray-800'}`}>
+              <ChevronRight className="w-3.5 h-3.5"/>
+            </button>
           </div>
         </div>
-      )}
+
+        {eventsLoading ? (
+          <p className="text-sm text-gray-600 text-center py-4">로딩 중...</p>
+        ) : sortedEvents.length === 0 ? (
+          <p className="text-sm text-gray-600 text-center py-4">{historyDate} 이력 없음</p>
+        ) : (
+          <div className="space-y-1 max-h-64 overflow-y-auto">
+            {sortedEvents.map((ev, i) => (
+              <div key={i} className="py-2 px-2.5 rounded bg-gray-900/40 border border-gray-800/30">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${cMap[ev.state] || cMap.IDLE}`}>
+                    {stateLabel(ev.state)}
+                  </span>
+                  {/^S\d+$/.test(ev.state) && (
+                    <span className="text-[11px] text-rose-400">{ev.state} {stopCodeNames[ev.state]||''}</span>
+                  )}
+                  <span className="text-[11px] text-gray-300 ml-auto font-bold font-mono">
+                    {formatDurationSec(ev.durationSeconds)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 mt-1 text-[10px] text-gray-500 font-mono">
+                  <span>{ev.startTime}</span>
+                  <span className="text-gray-700">→</span>
+                  <span>{ev.endTime}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="px-5 pt-5 pb-2">
         <h3 className="text-sm font-bold text-gray-200 mb-3">최근 7일 생산량</h3>

@@ -75,8 +75,17 @@ async function loadMachineDefsFromFirestore(): Promise<MachineDef[]> {
   return list;
 }
 
+export interface SyncUpdatedEntry {
+  no: number; name: string; mcno: number; status: string; stopReason: string;
+  // 이전 상태 정보 — 상태 변경 시 소요시간 누적에 사용
+  prevStatus?: string;
+  prevStopReason?: string;
+  prevStatusChangedAt?: number; // Unix ms
+  changedAt?: number;           // Unix ms (상태 변경 시각)
+}
+
 export interface SyncResult {
-  updated: { no: number; name: string; mcno: number; status: string; stopReason: string }[];
+  updated: SyncUpdatedEntry[];
   unchanged: number[];
   stale: { no: number; mcno: number; ageHours: number }[];
   unmapped: DspmMachineState[]; // /settings/machines 에서 매핑되지 않은 실측 설비(참고용)
@@ -139,7 +148,20 @@ export async function syncMachinesFromDspm(): Promise<SyncResult> {
       dayCompletedCount: real.DAYCOMCNT ?? 0,
     }, { merge: true });
 
-    result.updated.push({ no: def.no, name: def.name, mcno: def.mcno, status, stopReason });
+    // 이전 상태 정보 포함 (소요시간 누적용)
+    const syncEntry: SyncUpdatedEntry = {
+      no: def.no, name: def.name, mcno: def.mcno, status, stopReason,
+    };
+    if (prev) {
+      syncEntry.prevStatus = prev.status;
+      syncEntry.prevStopReason = prev.stopReason || '';
+      const prevChangedAt = prev.statusChangedAt?.toDate?.()?.getTime?.()
+        ?? prev.statusChangedAt?.seconds * 1000
+        ?? 0;
+      syncEntry.prevStatusChangedAt = prevChangedAt;
+      syncEntry.changedAt = reportedAt.getTime();
+    }
+    result.updated.push(syncEntry);
   }
 
   for (const real of realStates) {

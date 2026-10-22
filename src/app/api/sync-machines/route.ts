@@ -2,9 +2,9 @@
 // 실측 DSPM API를 읽어 Firestore(machines/*)에 반영한다.
 // 트리거: ProcessFlowDiagram이 열려 있는 동안 클라이언트가 주기적으로 이 라우트를 호출한다
 // (Vercel Hobby 플랜은 Cron이 1일 1회로 제한되어 있어 대시보드 상시 오픈을 트리거로 사용).
-// 필요하면 SYNC_SECRET을 설정해 외부에서 직접 호출(?secret=... 또는 x-sync-secret 헤더)하는 것도 막을 수 있다.
 import { NextResponse } from 'next/server';
 import { syncMachinesFromDspm } from '@/lib/machine-sync';
+import { accumulateStatusDuration } from '@/lib/status-accumulation';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,7 +20,28 @@ export async function GET(req: Request) {
 
   try {
     const result = await syncMachinesFromDspm();
-    return NextResponse.json({ ok: true, ...result });
+
+    // 상태 변경된 장비의 이전 상태 소요시간 누적
+    let accumulated = 0;
+    for (const entry of result.updated) {
+      if (entry.prevStatus && entry.prevStatusChangedAt && entry.changedAt) {
+        try {
+          await accumulateStatusDuration({
+            machineNo: entry.no,
+            machineName: entry.name,
+            prevStatus: entry.prevStatus,
+            prevStopReason: entry.prevStopReason || '',
+            prevStartTimestamp: entry.prevStatusChangedAt,
+            changedTimestamp: entry.changedAt,
+          });
+          accumulated++;
+        } catch (accErr) {
+          console.error(`[sync-machines] 상태 누적 실패 (no=${entry.no}):`, accErr);
+        }
+      }
+    }
+
+    return NextResponse.json({ ok: true, accumulated, ...result });
   } catch (err) {
     console.error('[sync-machines]', err);
     return NextResponse.json(

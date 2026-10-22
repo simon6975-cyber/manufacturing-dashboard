@@ -375,6 +375,16 @@ const ProcessFlowDiagram: React.FC = () => {
   useEffect(()=>{ const i=setInterval(()=>setNow(Date.now()),1000); return()=>clearInterval(i); },[]);
   useEffect(()=>{ const u=subscribeMachines(s=>setFirebaseStates(s)); return u; },[]);
 
+  // sync-machines 주기적 호출 (30초마다) — 상태 변경 감지 + 이벤트 기록
+  useEffect(() => {
+    const doSync = () => {
+      fetch('/api/sync-machines').catch(() => {});
+    };
+    doSync(); // 페이지 로드 시 즉시 1회
+    const interval = setInterval(doSync, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   // dspm_live/snapshot 구독 — RUNCNT/DAYCOMCNT를 MCNO 기준으로 매핑
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'dspm_live', 'snapshot'), (snap) => {

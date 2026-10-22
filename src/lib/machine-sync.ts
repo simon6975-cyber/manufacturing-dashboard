@@ -84,9 +84,16 @@ export interface SyncUpdatedEntry {
   changedAt?: number;           // Unix ms (상태 변경 시각)
 }
 
+export interface SyncUnchangedEntry {
+  no: number; name: string; mcno: number;
+  status: string; stopReason: string;
+  statusChangedAt: number;    // Unix ms — 현재 상태가 시작된 시각
+  lastAccumulatedAt: number;  // Unix ms — 마지막 누적 시각 (없으면 0)
+}
+
 export interface SyncResult {
   updated: SyncUpdatedEntry[];
-  unchanged: number[];
+  unchanged: SyncUnchangedEntry[];
   stale: { no: number; mcno: number; ageHours: number }[];
   unmapped: DspmMachineState[]; // /settings/machines 에서 매핑되지 않은 실측 설비(참고용)
 }
@@ -122,7 +129,14 @@ export async function syncMachinesFromDspm(): Promise<SyncResult> {
     const prev = snap.exists() ? snap.data() : null;
 
     if (prev && prev.status === status && (prev.stopReason || '') === stopReason) {
-      result.unchanged.push(def.no);
+      const prevChangedAt = prev.statusChangedAt?.toDate?.()?.getTime?.()
+        ?? (prev.statusChangedAt?.seconds ? prev.statusChangedAt.seconds * 1000 : 0);
+      result.unchanged.push({
+        no: def.no, name: def.name, mcno: def.mcno,
+        status: prev.status, stopReason: prev.stopReason || '',
+        statusChangedAt: prevChangedAt,
+        lastAccumulatedAt: prev.lastAccumulatedAt || 0,
+      });
       continue;
     }
 

@@ -1,11 +1,17 @@
 // src/app/api/cron/save-daily-production/route.ts
-// Vercel Cron: 매일 23:55 KST에 dspm_live/snapshot → production_daily 저장
-// 수동 호출도 가능 (GET /api/cron/save-daily-production)
+// Vercel Cron: 매일 23:55 KST에 실행
+// 1) dspm_live/snapshot → production_daily 저장
+// 2) machines/{no} → machine_status_daily 상태 시간 누적
+//    (대시보드가 꺼져있어도 하루 1회 상태 시간이 기록됨)
 import { NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase-admin';
+import {
+  accumulateOngoingStatus,
+  stateKey,
+} from '@/lib/status-accumulation';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30; // 최대 30초
+export const maxDuration = 60; // 상태 누적 포함하여 60초
 
 // KST 기준 오늘 날짜
 function todayKST(): string {
@@ -38,75 +44,127 @@ export async function GET(request: Request) {
 
   try {
     const date = todayKST();
-
-    // 1. dspm_live/snapshot에서 현재 데이터 읽기
     const adminDb = getAdminDb();
+    const now = Date.now();
 
-    const snapshotDoc = await adminDb.doc('dspm_live/snapshot').get();
-    if (!snapshotDoc.exists) {
-      return NextResponse.json({ ok: false, error: 'dspm_live/snapshot not found', date });
-    }
-    const rawList = snapshotDoc.data()?.data;
-    if (!Array.isArray(rawList) || rawList.length === 0) {
-      return NextResponse.json({ ok: false, error: 'No DSPM data in snapshot', date });
-    }
-
-    // MCNO → DAYCOMCNT 매핑
-    const dspmMap: Record<number, number> = {};
-    rawList.forEach((s: Record<string, unknown>) => {
-      const mcno = typeof s.MCNO === 'string' ? parseInt(s.MCNO, 10) : Number(s.MCNO) || 0;
-      if (mcno > 0) {
-        dspmMap[mcno] = typeof s.DAYCOMCNT === 'number' ? s.DAYCOMCNT
-          : typeof s.DAYCOMCNT === 'string' ? parseInt(s.DAYCOMCNT, 10) || 0 : 0;
-      }
-    });
-
-    // 2. machine_definitions에서 장비 목록 읽기
-    const machineSnap = await adminDb.collection('machine_definitions').get();
-    if (machineSnap.empty) {
-      return NextResponse.json({ ok: false, error: 'No machine_definitions found', date });
-    }
-
-    // 3. production_daily/{date}/machines/{no}에 저장
-    const batch = adminDb.batch();
+    // ═══════════════════════════════════════════════════
+    // PART 1: 생산량 저장 (기존 로직)
+    // ═══════════════════════════════════════════════════
     let savedCount = 0;
 
-    machineSnap.forEach((docSnap) => {
+    const snapshotDoc = await adminDb.doc('dspm_live/snapshot').get();
+    const rawList = snapshotDoc.exists ? snapshotDoc.data()?.data : null;
+
+    // 장비 정의 읽기 (두 파트 공통)
+    const machineDefSnap = await adminDb.collection('machine_definitions').get();
+
+    if (Array.isArray(rawList) && rawList.length > 0 && !machineDefSnap.empty) {
+      // MCNO → DAYCOMCNT 매핑
+      const dspmMap: Record<number, number> = {};
+      rawList.forEach((s: Record<string, unknown>) => {
+        const mcno = typeof s.MCNO === 'string' ? parseInt(s.MCNO, 10) : Number(s.MCNO) || 0;
+        if (mcno > 0) {
+          dspmMap[mcno] = typeof s.DAYCOMCNT === 'number' ? s.DAYCOMCNT
+            : typeof s.DAYCOMCNT === 'string' ? parseInt(s.DAYCOMCNT, 10) || 0 : 0;
+        }
+      });
+
+      const batch = adminDb.batch();
+
+      machineDefSnap.forEach((docSnap) => {
+        const data = docSnap.data();
+        const no = data.no ?? parseInt(docSnap.id, 10);
+        const mcno = typeof data.mcno === 'number' ? data.mcno : null;
+
+        if (mcno == null) return;
+
+        const dayComCnt = dspmMap[mcno];
+        if (dayComCnt == null || dayComCnt <= 0) return;
+
+        const equipmentGroup = data.equipmentGroup
+          || (data.name || '').replace(/\s*\d+호기$/, '').replace(/\s+/g, '');
+
+        const ref = adminDb.doc(`production_daily/${date}/machines/${no}`);
+        batch.set(ref, {
+          machineNo: no,
+          machineName: data.name || `장비 ${no}`,
+          equipmentGroup,
+          group: data.group || '',
+          dayCompletedCount: dayComCnt,
+          date,
+          updatedAt: new Date(),
+        }, { merge: true });
+
+        savedCount++;
+      });
+
+      if (savedCount > 0) {
+        await batch.commit();
+      }
+    }
+
+    // ═══════════════════════════════════════════════════
+    // PART 2: 상태 시간 누적 (Admin SDK로 machines 직접 읽기)
+    // ═══════════════════════════════════════════════════
+    let statusAccumulated = 0;
+
+    // machines 컬렉션에서 모든 장비의 현재 상태 읽기
+    const machinesSnap = await adminDb.collection('machines').get();
+
+    // machine_definitions에서 이름 매핑 (no → name)
+    const machineNames: Record<number, string> = {};
+    machineDefSnap.forEach((docSnap) => {
       const data = docSnap.data();
       const no = data.no ?? parseInt(docSnap.id, 10);
-      const mcno = typeof data.mcno === 'number' ? data.mcno : null;
-
-      if (mcno == null) return; // MCNO 매핑 안 된 장비는 스킵
-
-      const dayComCnt = dspmMap[mcno];
-      if (dayComCnt == null || dayComCnt <= 0) return; // 생산량 없으면 스킵
-
-      const equipmentGroup = data.equipmentGroup
-        || (data.name || '').replace(/\s*\d+호기$/, '').replace(/\s+/g, '');
-
-      const ref = adminDb.doc(`production_daily/${date}/machines/${no}`);
-      batch.set(ref, {
-        machineNo: no,
-        machineName: data.name || `장비 ${no}`,
-        equipmentGroup,
-        group: data.group || '',
-        dayCompletedCount: dayComCnt,
-        date,
-        updatedAt: new Date(),
-      }, { merge: true });
-
-      savedCount++;
+      machineNames[no] = data.name || `장비 ${no}`;
     });
 
-    if (savedCount > 0) {
-      await batch.commit();
+    for (const docSnap of machinesSnap.docs) {
+      const no = parseInt(docSnap.id, 10);
+      if (isNaN(no)) continue;
+
+      const data = docSnap.data();
+      const status = data.status;
+      if (!status) continue; // 상태 데이터 없는 장비 스킵
+
+      const stopReason = data.stopReason || '';
+      const machineName = machineNames[no] || `장비 ${no}`;
+
+      // lastAccumulatedAt이 없으면 statusChangedAt 사용
+      const lastAccum = data.lastAccumulatedAt || 0;
+      const statusChangedAt = data.statusChangedAt?.toDate?.()?.getTime?.()
+        ?? (data.statusChangedAt?._seconds ? data.statusChangedAt._seconds * 1000 : 0);
+      const fromTime = lastAccum || statusChangedAt;
+
+      if (fromTime > 0 && now > fromTime) {
+        try {
+          await accumulateOngoingStatus({
+            machineNo: no,
+            machineName,
+            currentStatus: status,
+            currentStopReason: stopReason,
+            lastAccumulatedAt: fromTime,
+            nowTimestamp: now,
+          });
+
+          // lastAccumulatedAt 업데이트
+          await adminDb.doc(`machines/${no}`).set(
+            { lastAccumulatedAt: now },
+            { merge: true }
+          );
+          statusAccumulated++;
+        } catch (accErr) {
+          console.error(`[cron] 상태 누적 실패 (no=${no}):`, accErr);
+        }
+      }
     }
 
     return NextResponse.json({
       ok: true,
       date,
       savedCount,
-      message: `${savedCount}개 장비 생산량 저장 완료`,
+      statusAccumulated,
+      message: `생산량 ${savedCount}건, 상태누적 ${statusAccumulated}건 저장 완료`,
     });
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);

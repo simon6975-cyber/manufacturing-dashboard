@@ -161,8 +161,9 @@ export default function AnalysisPage() {
       operatingRate,
       stopCodeRanking,
       machineCount: entries.length,
+      totalMachineCount: allDefs.length,
     };
-  }, [entries, stopCodeMap]);
+  }, [entries, stopCodeMap, allDefs]);
 
   // 장비별 데이터
   const machineData = useMemo(() => {
@@ -180,8 +181,13 @@ export default function AnalysisPage() {
       const total = run + idle + stop;
       const opRate = total > 0 ? (run / total * 100) : 0;
       return { def, entry, run, idle, stop, total, opRate, states };
-    }).filter(d => d.total > 0)
-      .sort((a, b) => b.total - a.total);
+    }).sort((a, b) => {
+      // 데이터 있는 장비 우선, 그 안에서 가동률 순
+      if (a.total > 0 && b.total === 0) return -1;
+      if (a.total === 0 && b.total > 0) return 1;
+      if (a.total === 0 && b.total === 0) return a.def.no - b.def.no;
+      return b.total - a.total;
+    });
   }, [allDefs, entries]);
 
   // 선택한 장비의 상세 정보
@@ -304,7 +310,7 @@ export default function AnalysisPage() {
               <SummaryCard
                 label="가동률"
                 value={`${summary.operatingRate.toFixed(1)}%`}
-                sub={`${summary.machineCount}대 장비`}
+                sub={`${summary.machineCount}/${summary.totalMachineCount}대 장비`}
                 color="blue"
                 icon={Activity}
               />
@@ -338,9 +344,9 @@ export default function AnalysisPage() {
                             </span>
                           </div>
                           <span className={`text-xs font-mono ${
-                            opRate >= 70 ? 'text-emerald-400' : opRate >= 40 ? 'text-amber-400' : 'text-rose-400'
+                            total === 0 ? 'text-gray-600' : opRate >= 70 ? 'text-emerald-400' : opRate >= 40 ? 'text-amber-400' : 'text-rose-400'
                           }`}>
-                            {opRate.toFixed(1)}%
+                            {total === 0 ? '대기중' : `${opRate.toFixed(1)}%`}
                           </span>
                         </div>
                         {/* 가동 바 */}

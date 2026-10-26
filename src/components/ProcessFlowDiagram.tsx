@@ -66,24 +66,64 @@ interface StatusEvent {
   durationSeconds: number;
 }
 
-function useStatusEvents(machineNo: number, date: string) {
+function parseTimeToTimestamp(dateStr: string, timeStr: string): number {
+  // dateStr: YYYY-MM-DD, timeStr: HH:MM:SS → KST epoch ms
+  const [h, m, s] = timeStr.split(':').map(Number);
+  const dt = new Date(`${dateStr}T00:00:00+09:00`);
+  return dt.getTime() + (h * 3600 + m * 60 + s) * 1000;
+}
+
+function useStatusEvents(machineNo: number, date: string, mcno?: number) {
   const [events, setEvents] = useState<StatusEvent[]>([]);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/status-daily?date=${date}`)
-      .then(res => res.json())
-      .then(data => {
+
+    const normalizeDspmEvents = (evts: { state: string; startTime: string; endTime: string; durationSeconds: number }[]): StatusEvent[] =>
+      evts.map(e => ({
+        state: e.state,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        startTimestamp: parseTimeToTimestamp(date, e.startTime),
+        endTimestamp: parseTimeToTimestamp(date, e.endTime),
+        durationSeconds: e.durationSeconds,
+      }));
+
+    const fetchDspm = async (): Promise<boolean> => {
+      if (!mcno) return false;
+      try {
+        const res = await fetch(`/api/dspm/log?mcno=${mcno}&date=${date}`);
+        const json = await res.json();
+        if (json.ok && Array.isArray(json.events) && json.events.length > 0) {
+          if (!cancelled) setEvents(normalizeDspmEvents(json.events));
+          return true;
+        }
+      } catch { /* DSPM 실패 → fallback */ }
+      return false;
+    };
+
+    const fetchFirestore = async () => {
+      try {
+        const res = await fetch(`/api/status-daily?date=${date}`);
+        const data = await res.json();
         if (cancelled) return;
         const list = data?.entries || data || [];
         const machineData = (Array.isArray(list) ? list : []).find((m: { machineNo: number }) => m.machineNo === machineNo);
         setEvents(machineData?.events || []);
-        setLoading(false);
-      })
-      .catch(() => { if (!cancelled) { setEvents([]); setLoading(false); } });
+      } catch {
+        if (!cancelled) setEvents([]);
+      }
+    };
+
+    (async () => {
+      const dspmOk = await fetchDspm();
+      if (!dspmOk && !cancelled) await fetchFirestore();
+      if (!cancelled) setLoading(false);
+    })();
+
     return () => { cancelled = true; };
-  }, [machineNo, date]);
+  }, [machineNo, date, mcno]);
   return { events, loading };
 }
 const DAY_LABELS = ['화','수','목','금','토','일','월'];
@@ -213,7 +253,7 @@ const EquipmentGroupComp: React.FC<{
 const InfoRow: React.FC<{label:string;children:React.ReactNode}> = ({label,children}) => (
   <div className="flex items-center justify-between py-3.5"><span className="text-sm text-gray-400">{label}</span><span className="text-sm">{children}</span></div>
 );
-const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> = ({process,onClose,now}) => {
+const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number;mcno?:number}> = ({process,onClose,now,mcno}) => {
   const { codeMap: stopCodeNames } = useStopCodes();
   const ds = toDisplay(process.status);
   const last7 = useMemo(()=>getLast7Days(process.dailyProduction,process.no),[process]);
@@ -222,7 +262,7 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
 
   // 상태 이력: machine_status_daily에서 가져오기 (정확한 시작/종료/소요시간)
   const [historyDate, setHistoryDate] = useState(kstTodayStr);
-  const { events, loading: eventsLoading } = useStatusEvents(process.no, historyDate);
+  const { events, loading: eventsLoading } = useStatusEvents(process.no, historyDate, mcno);
   const isToday = historyDate === kstTodayStr();
 
   // 이벤트를 최신순으로 정렬
@@ -631,7 +671,7 @@ const ProcessFlowDiagram: React.FC = () => {
         <TotalCard label="전 공정 누적 제작완료" value={totals.completed} unit="매" color="emerald" border="border-l-emerald-400/70"/>
       </div>
 
-      {selectedNo!==null&&p[selectedNo]&&<DetailPanel process={p[selectedNo]} onClose={()=>setSelectedNo(null)} now={now}/>}
+      {selectedNo!==null&&p[selectedNo]&&<DetailPanel process={p[selectedNo]} onClose={()=>setSelectedNo(null)} now={now} mcno={machineDefs[selectedNo]?.mcno}/>}
     </div>
   );
 };

@@ -72,19 +72,39 @@ export default function AnalysisPage() {
   const { defs: machineDefs, allDefs } = useMachineDefs();
   const { codes: stopCodes, codeMap: stopCodeMap } = useStopCodes();
 
+  // 데이터 소스 (DSPM 로그 우선, 실패 시 Firestore fallback)
+  const [dataSource, setDataSource] = useState<'dspm' | 'firestore' | ''>('');
+
   // 데이터 로드
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
+      // 1차: DSPM 로그 API
+      const dspmRes = await fetch(`/api/dspm-log-daily?date=${date}`);
+      const dspmJson = await dspmRes.json();
+      if (dspmJson.ok && Array.isArray(dspmJson.entries) && dspmJson.entries.length > 0) {
+        setEntries(dspmJson.entries);
+        setDataSource('dspm');
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // DSPM 실패 → fallback
+    }
+    try {
+      // 2차: 기존 Firestore 기반
       const res = await fetch(`/api/status-daily?date=${date}`);
       const json = await res.json();
       if (json.ok && Array.isArray(json.entries)) {
         setEntries(json.entries);
+        setDataSource('firestore');
       } else {
         setEntries([]);
+        setDataSource('');
       }
     } catch {
       setEntries([]);
+      setDataSource('');
     } finally {
       setLoading(false);
     }
@@ -187,7 +207,18 @@ export default function AnalysisPage() {
             </div>
             <div>
               <h1 className="text-lg font-bold">정지/병목 분석</h1>
-              <p className="text-[11px] text-gray-500">장비별 가동·정지 상태 누적 분석</p>
+              <p className="text-[11px] text-gray-500">
+                장비별 가동·정지 상태 누적 분석
+                {dataSource && (
+                  <span className={`ml-2 px-1.5 py-0.5 rounded text-[9px] font-mono ${
+                    dataSource === 'dspm'
+                      ? 'bg-blue-500/15 text-blue-400'
+                      : 'bg-gray-700 text-gray-400'
+                  }`}>
+                    {dataSource === 'dspm' ? 'DSPM LOG' : 'FIRESTORE'}
+                  </span>
+                )}
+              </p>
             </div>
           </div>
 

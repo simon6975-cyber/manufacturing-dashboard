@@ -89,30 +89,69 @@ interface StatusEvent {
   durationSeconds: number;
 }
 
-function useStatusEvents(machineNo: number, date: string) {
+function parseTimeToTimestamp(dateStr: string, timeStr: string): number {
+  const [h, m, s] = timeStr.split(':').map(Number);
+  const dt = new Date(`${dateStr}T00:00:00+09:00`);
+  return dt.getTime() + (h * 3600 + m * 60 + s) * 1000;
+}
+
+function useStatusEvents(machineNo: number, date: string, mcno?: number) {
   const [events, setEvents] = useState<StatusEvent[]>([]);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`/api/status-daily?date=${date}`)
-      .then(res => res.json())
-      .then(data => {
+
+    const normalizeDspmEvents = (evts: { state: string; startTime: string; endTime: string; durationSeconds: number }[]): StatusEvent[] =>
+      evts.map(e => ({
+        state: e.state,
+        startTime: e.startTime,
+        endTime: e.endTime,
+        startTimestamp: parseTimeToTimestamp(date, e.startTime),
+        endTimestamp: parseTimeToTimestamp(date, e.endTime),
+        durationSeconds: e.durationSeconds,
+      }));
+
+    const fetchDspm = async (): Promise<boolean> => {
+      if (!mcno) return false;
+      try {
+        const res = await fetch(`/api/dspm/log?mcno=${mcno}&date=${date}`);
+        const json = await res.json();
+        if (json.ok && Array.isArray(json.events) && json.events.length > 0) {
+          if (!cancelled) setEvents(normalizeDspmEvents(json.events));
+          return true;
+        }
+      } catch { /* DSPM 실패 → fallback */ }
+      return false;
+    };
+
+    const fetchFirestore = async () => {
+      try {
+        const res = await fetch(`/api/status-daily?date=${date}`);
+        const data = await res.json();
         if (cancelled) return;
         const list = data?.entries || data || [];
         const machineData = (Array.isArray(list) ? list : []).find((m: { machineNo: number }) => m.machineNo === machineNo);
         setEvents(machineData?.events || []);
-        setLoading(false);
-      })
-      .catch(() => { if (!cancelled) { setEvents([]); setLoading(false); } });
+      } catch {
+        if (!cancelled) setEvents([]);
+      }
+    };
+
+    (async () => {
+      const dspmOk = await fetchDspm();
+      if (!dspmOk && !cancelled) await fetchFirestore();
+      if (!cancelled) setLoading(false);
+    })();
+
     return () => { cancelled = true; };
-  }, [machineNo, date]);
+  }, [machineNo, date, mcno]);
   return { events, loading };
 }
 
-function TerminalStatusHistory({ machineNo, stopCodeMap }: { machineNo: number; stopCodeMap: Record<string, string> }) {
+function TerminalStatusHistory({ machineNo, stopCodeMap, mcno }: { machineNo: number; stopCodeMap: Record<string, string>; mcno?: number }) {
   const [historyDate, setHistoryDate] = useState(kstTodayStr);
-  const { events, loading } = useStatusEvents(machineNo, historyDate);
+  const { events, loading } = useStatusEvents(machineNo, historyDate, mcno);
   const isToday = historyDate === kstTodayStr();
   const sortedEvents = useMemo(() => [...events].sort((a, b) => b.startTimestamp - a.startTimestamp), [events]);
 
@@ -339,7 +378,7 @@ export default function TerminalPage({ params }: { params: Promise<{ no: string 
         </div>
 
         {/* 상태 변경 이력 — machine_status_daily 기반 */}
-        <TerminalStatusHistory machineNo={machineNo} stopCodeMap={stopCodeMap} />
+        <TerminalStatusHistory machineNo={machineNo} stopCodeMap={stopCodeMap} mcno={machine?.mcno} />
       </div>
 
       {/* STOP 코드 선택 모달 */}

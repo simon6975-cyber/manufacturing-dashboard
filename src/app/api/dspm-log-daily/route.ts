@@ -8,7 +8,7 @@ import { fetchDspmMachineLog, aggregateDspmLogByDate } from '@/lib/dspm-log';
 import type { DspmDaySummary } from '@/lib/dspm-log';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30; // 여러 장비 순차 fetch — 넉넉하게
+export const maxDuration = 55; // 여러 장비 순차 fetch — 넉넉하게
 
 interface MachineDef {
   no: number;
@@ -54,18 +54,21 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, date, count: 0, entries: [] });
     }
 
-    // 병렬로 DSPM 로그 가져오기 (최대 5개씩 배치)
+    // 전체 장비를 병렬로 DSPM 로그 가져오기 (10개씩 배치, 개별 타임아웃 8초)
     const results: DspmDaySummary[] = [];
-    const batchSize = 5;
+    const errors: string[] = [];
+    const batchSize = 10;
     for (let i = 0; i < targetDefs.length; i += batchSize) {
       const batch = targetDefs.slice(i, i + batchSize);
       const batchResults = await Promise.allSettled(
         batch.map(async (def) => {
           try {
-            const entries = await fetchDspmMachineLog(def.mcno!);
+            const entries = await fetchDspmMachineLog(def.mcno!, 8000);
             return aggregateDspmLogByDate(entries, date, def.no, def.name, def.mcno!);
           } catch (err) {
-            console.error(`[dspm-log-daily] MCNO ${def.mcno} (NO.${def.no}) 실패:`, err);
+            const msg = `MCNO ${def.mcno} (NO.${def.no}): ${err instanceof Error ? err.message : String(err)}`;
+            console.error(`[dspm-log-daily] ${msg}`);
+            errors.push(msg);
             return null;
           }
         })

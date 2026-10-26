@@ -75,31 +75,46 @@ export default function AnalysisPage() {
   // 데이터 소스 (DSPM 로그 우선, 실패 시 Firestore fallback)
   const [dataSource, setDataSource] = useState<'dspm' | 'firestore' | ''>('');
 
-  // 데이터 로드
+  // 데이터 로드 — 두 소스를 병렬로 가져와 병합 (DSPM 로그 우선)
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // 1차: DSPM 로그 API
-      const dspmRes = await fetch(`/api/dspm-log-daily?date=${date}`);
-      const dspmJson = await dspmRes.json();
-      if (dspmJson.ok && Array.isArray(dspmJson.entries) && dspmJson.entries.length > 0) {
-        setEntries(dspmJson.entries);
-        setDataSource('dspm');
-        setLoading(false);
-        return;
+      // 양쪽 소스 병렬 요청
+      const [dspmResult, firestoreResult] = await Promise.allSettled([
+        fetch(`/api/dspm-log-daily?date=${date}`).then(r => r.json()),
+        fetch(`/api/status-daily?date=${date}`).then(r => r.json()),
+      ]);
+
+      const dspmEntries: MachineStatusDaily[] =
+        dspmResult.status === 'fulfilled' && dspmResult.value?.ok && Array.isArray(dspmResult.value.entries)
+          ? dspmResult.value.entries : [];
+      const fsEntries: MachineStatusDaily[] =
+        firestoreResult.status === 'fulfilled' && firestoreResult.value?.ok && Array.isArray(firestoreResult.value.entries)
+          ? firestoreResult.value.entries : [];
+
+      // 병합: 장비번호 기준, DSPM 데이터 우선 (이벤트가 더 정확)
+      const merged = new Map<number, MachineStatusDaily>();
+
+      // Firestore 먼저 (베이스)
+      for (const e of fsEntries) {
+        merged.set(e.machineNo, e);
       }
-    } catch {
-      // DSPM 실패 → fallback
-    }
-    try {
-      // 2차: 기존 Firestore 기반
-      const res = await fetch(`/api/status-daily?date=${date}`);
-      const json = await res.json();
-      if (json.ok && Array.isArray(json.entries)) {
-        setEntries(json.entries);
+      // DSPM 로그가 있으면 덮어쓰기 (더 정확한 소스)
+      for (const e of dspmEntries) {
+        merged.set(e.machineNo, e);
+      }
+
+      const mergedArray = Array.from(merged.values());
+      setEntries(mergedArray);
+
+      // 데이터 소스 표시
+      if (dspmEntries.length > 0 && fsEntries.length > 0) {
+        setDataSource('dspm'); // 병합됨 (DSPM 우선)
+      } else if (dspmEntries.length > 0) {
+        setDataSource('dspm');
+      } else if (fsEntries.length > 0) {
         setDataSource('firestore');
       } else {
-        setEntries([]);
         setDataSource('');
       }
     } catch {

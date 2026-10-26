@@ -21,9 +21,9 @@ const DSPM_LOG_API_BASE = 'http://dspm.dsjs.co.kr:10920/api/getmachinelog';
 /**
  * DSPM 로그 API에서 장비의 상태 이력을 가져온다 (서버사이드 전용)
  */
-export async function fetchDspmMachineLog(mcno: number): Promise<DspmLogEntry[]> {
+export async function fetchDspmMachineLog(mcno: number, timeoutMs = 10000): Promise<DspmLogEntry[]> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000); // 15초 (데이터가 많을 수 있음)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const url = `${DSPM_LOG_API_BASE}?mcno=${mcno}`;
     const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });

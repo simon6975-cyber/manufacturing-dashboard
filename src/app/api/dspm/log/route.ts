@@ -59,8 +59,18 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: true, mcno, count: entries.length, data: entries });
   } catch (err) {
     console.error(`[dspm/log] mcno=${mcno}:`, err);
+    let errorMsg = 'Unknown error';
+    if (err instanceof Error) {
+      if (err.name === 'AbortError') {
+        errorMsg = `DSPM 서버 타임아웃 (15초 초과) — mcno=${mcno}`;
+      } else {
+        errorMsg = `${err.name}: ${err.message} — mcno=${mcno}`;
+      }
+    } else {
+      errorMsg = String(err);
+    }
     return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { ok: false, error: errorMsg },
       { status: 502 }
     );
   }

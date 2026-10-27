@@ -163,38 +163,56 @@ export default function AnalysisPage() {
       const batch = machines.slice(i, i + batchSize);
       const batchResults = await Promise.allSettled(
         batch.map(async (def) => {
-          const url = `/api/dspm/log?mcno=${def.mcno}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
-          const res = await fetch(url, { signal: controller.signal });
-          const json = await res.json();
-          if (!res.ok || !json.ok) {
+          try {
+            const url = `/api/dspm/log?mcno=${def.mcno}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
+            const res = await fetch(url, { signal: controller.signal });
+            let json;
+            try {
+              json = await res.json();
+            } catch {
+              return {
+                machineNo: def.no,
+                machineName: def.name,
+                mcno: def.mcno!,
+                events: [], states: {}, dailySummary: [],
+                error: `API 응답 파싱 실패 (HTTP ${res.status})`,
+              } as MachineResult;
+            }
+            if (!res.ok || !json.ok) {
+              return {
+                machineNo: def.no,
+                machineName: def.name,
+                mcno: def.mcno!,
+                events: [], states: {}, dailySummary: [],
+                error: json.error || `HTTP ${res.status}`,
+              } as MachineResult;
+            }
             return {
               machineNo: def.no,
               machineName: def.name,
               mcno: def.mcno!,
-              events: [],
-              states: {},
-              dailySummary: [],
-              error: json.error || `HTTP ${res.status}`,
+              events: json.events || [],
+              states: json.states || {},
+              dailySummary: json.dailySummary || [],
+            } as MachineResult;
+          } catch (err: unknown) {
+            if (err instanceof Error && err.name === 'AbortError') throw err;
+            return {
+              machineNo: def.no,
+              machineName: def.name,
+              mcno: def.mcno!,
+              events: [], states: {}, dailySummary: [],
+              error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
             } as MachineResult;
           }
-          return {
-            machineNo: def.no,
-            machineName: def.name,
-            mcno: def.mcno!,
-            events: json.events || [],
-            states: json.states || {},
-            dailySummary: json.dailySummary || [],
-          } as MachineResult;
         })
       );
 
       for (const r of batchResults) {
         if (r.status === 'fulfilled') {
           allResults.push(r.value);
-        } else {
-          // rejected는 AbortError 등
-          console.error('fetch failed:', r.reason);
         }
+        // rejected = AbortError (사용자 취소) → 무시
       }
       setProgress({ done: Math.min(i + batchSize, machines.length), total: machines.length });
       setResults([...allResults]); // 중간 결과 업데이트
@@ -243,6 +261,13 @@ export default function AnalysisPage() {
                   <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-mono bg-blue-500/15 text-blue-400">
                     DSPM LOG
                   </span>
+                  <a
+                    href="/api/dspm/diag"
+                    target="_blank"
+                    className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-mono bg-gray-800 text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    진단
+                  </a>
                 </p>
               </div>
             </div>

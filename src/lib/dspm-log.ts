@@ -148,3 +148,79 @@ export function aggregateDspmLogByDate(
     states,
   };
 }
+
+/**
+ * 기간(dateFrom ~ dateTo) 집계 — 각 날짜별로 분할 후 전체 합산
+ */
+export interface DspmDateRangeResult {
+  machineNo: number;
+  machineName: string;
+  mcno: number;
+  dateFrom: string;
+  dateTo: string;
+  events: DspmDayEvent[];   // 전체 기간의 이벤트 (날짜+시간 포함)
+  states: Record<string, { totalSeconds: number; count: number }>;
+  dailySummary: { date: string; states: Record<string, { totalSeconds: number; count: number }> }[];
+}
+
+export function aggregateDspmLogByDateRange(
+  entries: DspmLogEntry[],
+  dateFrom: string,
+  dateTo: string,
+  machineNo: number,
+  machineName: string,
+  mcno: number,
+): DspmDateRangeResult {
+  // 날짜 목록 생성
+  const dates: string[] = [];
+  const startD = new Date(`${dateFrom}T00:00:00+09:00`);
+  const endD = new Date(`${dateTo}T00:00:00+09:00`);
+  for (let d = new Date(startD); d <= endD; d.setDate(d.getDate() + 1)) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    dates.push(`${y}-${m}-${dd}`);
+  }
+
+  const allEvents: DspmDayEvent[] = [];
+  const totalStates: Record<string, { totalSeconds: number; count: number }> = {};
+  const dailySummary: { date: string; states: Record<string, { totalSeconds: number; count: number }> }[] = [];
+
+  for (const dt of dates) {
+    const day = aggregateDspmLogByDate(entries, dt, machineNo, machineName, mcno);
+
+    // 이벤트에 날짜 정보 포함 (startTime을 "YYYY-MM-DD HH:MM:SS" 형태로)
+    for (const evt of day.events) {
+      allEvents.push({
+        ...evt,
+        startTime: `${dt} ${evt.startTime}`,
+        endTime: `${dt} ${evt.endTime}`,
+      });
+    }
+
+    // 상태 합산
+    for (const [state, accum] of Object.entries(day.states)) {
+      if (!totalStates[state]) {
+        totalStates[state] = { totalSeconds: 0, count: 0 };
+      }
+      totalStates[state].totalSeconds += accum.totalSeconds;
+      totalStates[state].count += accum.count;
+    }
+
+    // 일별 요약 (데이터 있는 날만)
+    if (day.events.length > 0) {
+      dailySummary.push({ date: dt, states: day.states });
+    }
+  }
+
+  return {
+    machineNo,
+    machineName,
+    mcno,
+    dateFrom,
+    dateTo,
+    events: allEvents,
+    states: totalStates,
+    dailySummary,
+  };
+}

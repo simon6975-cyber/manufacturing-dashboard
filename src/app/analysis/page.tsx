@@ -1,14 +1,19 @@
 // src/app/analysis/page.tsx
-// v2.10.8 — 정지/병목분석: Firebase 누적 데이터 기반 조회 (Vercel↔DSPM 직접호출 제거)
+// v2.10.9 — 정지/병목분석: 온디맨드 DSPM 이력 조회
+// 1차: Firebase 캐시 확인 → 있으면 즉시 표시
+// 2차: 없으면 dspm_sync_requests 생성 → 사내PC 스크립트가 DSPM에서 가져와 Firebase 저장 → 표시
 'use client';
 
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   Activity, Calendar, Clock, Play, AlertTriangle, Pause,
   Search, Loader2, RefreshCw, CheckSquare, Square, ChevronDown, ChevronUp,
+  Download, Wifi, WifiOff,
 } from 'lucide-react';
 import { useMachineDefs } from '@/lib/machine-defs';
 import { useStopCodes } from '@/lib/useStopCodes';
+import { db } from '@/lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 /* ── 타입 ── */
 interface DspmEvent {
@@ -36,7 +41,10 @@ interface MachineResult {
   states: Record<string, StateAccum>;
   dailySummary: DailySummary[];
   error?: string;
+  hasData: boolean; // Firebase에 데이터 존재 여부
 }
+
+type SyncStatus = 'idle' | 'requesting' | 'pending' | 'processing' | 'completed' | 'error' | 'timeout';
 
 /* ── KST 날짜 유틸 ── */
 function todayKST(): string {
@@ -91,15 +99,30 @@ export default function AnalysisPage() {
   const [selectedMachines, setSelectedMachines] = useState<Set<number>>(new Set());
   const [results, setResults] = useState<MachineResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [queried, setQueried] = useState(false); // 조회 수행 여부
+  const [queried, setQueried] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [groupFilter, setGroupFilter] = useState<string>('전체');
   const [searchText, setSearchText] = useState('');
   const [expandedMachine, setExpandedMachine] = useState<number | null>(null);
 
+  // 동기화 요청 상태
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle');
+  const [syncRequestId, setSyncRequestId] = useState<string | null>(null);
+  const [syncProgress, setSyncProgress] = useState<{ total: number; done: number; currentMachine: string } | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [missingMachineCount, setMissingMachineCount] = useState(0);
+
   const { defs: machineDefs, allDefs, loading: defsLoading } = useMachineDefs();
   const { codeMap: stopCodeMap } = useStopCodes();
   const abortRef = useRef<AbortController | null>(null);
+  const unsubSyncRef = useRef<(() => void) | null>(null);
+
+  // 동기화 요청 감시 해제
+  useEffect(() => {
+    return () => {
+      if (unsubSyncRef.current) unsubSyncRef.current();
+    };
+  }, []);
 
   // 공정그룹 목록
   const groups = useMemo(() => {
@@ -107,7 +130,7 @@ export default function AnalysisPage() {
     return ['전체', ...Array.from(s)];
   }, [allDefs]);
 
-  // MCNO 매핑된 장비만 필터
+  // 필터된 장비
   const filteredDefs = useMemo(() => {
     return allDefs.filter(d => {
       if (groupFilter !== '전체' && d.group !== groupFilter) return false;
@@ -138,8 +161,75 @@ export default function AnalysisPage() {
     });
   }, []);
 
-  // 조회 실행 — Firebase machine_status_daily 데이터 사용
-  // (대시보드 동기화 스크립트가 DSPM → Firebase에 누적해둔 데이터를 읽음)
+  // Firebase에서 데이터 조회
+  const fetchFirebaseData = useCallback(async (signal: AbortSignal) => {
+    const url = `/api/status-daily?start=${dateFrom}&end=${dateTo}`;
+    const res = await fetch(url, { signal });
+    const json = await res.json();
+    if (!res.ok || !json.ok) {
+      throw new Error(json.error || `HTTP ${res.status}`);
+    }
+    return json.entries || [];
+  }, [dateFrom, dateTo]);
+
+  // Firebase 데이터를 MachineResult[]로 변환
+  const buildResults = useCallback((
+    entries: Array<{
+      machineNo: number; machineName: string; date: string;
+      states: Record<string, StateAccum>;
+      events: Array<{ state: string; startTime: string; endTime: string; durationSeconds: number }>;
+    }>,
+    machines: Array<{ no: number; name: string; mcno?: number }>
+  ): MachineResult[] => {
+    const byMachine = new Map<number, typeof entries>();
+    for (const entry of entries) {
+      const list = byMachine.get(entry.machineNo) || [];
+      list.push(entry);
+      byMachine.set(entry.machineNo, list);
+    }
+
+    return machines.map(def => {
+      const dayEntries = byMachine.get(def.no) || [];
+      const allEvents: DspmEvent[] = [];
+      const totalStates: Record<string, StateAccum> = {};
+      const dailySummary: DailySummary[] = [];
+
+      dayEntries.sort((a, b) => a.date.localeCompare(b.date));
+
+      for (const day of dayEntries) {
+        for (const evt of (day.events || [])) {
+          allEvents.push({
+            state: evt.state,
+            startTime: `${day.date} ${evt.startTime}`,
+            endTime: `${day.date} ${evt.endTime}`,
+            durationSeconds: evt.durationSeconds,
+          });
+        }
+        for (const [state, accum] of Object.entries(day.states || {})) {
+          if (!totalStates[state]) totalStates[state] = { totalSeconds: 0, count: 0 };
+          totalStates[state].totalSeconds += accum.totalSeconds;
+          totalStates[state].count += accum.count;
+        }
+        if ((day.events || []).length > 0 || Object.keys(day.states || {}).length > 0) {
+          dailySummary.push({ date: day.date, states: day.states || {} });
+        }
+      }
+
+      const hasData = dayEntries.length > 0;
+      return {
+        machineNo: def.no,
+        machineName: def.name,
+        mcno: def.mcno!,
+        events: allEvents,
+        states: totalStates,
+        dailySummary,
+        hasData,
+        error: hasData ? undefined : undefined, // 데이터 없는 건 동기화 요청 UI로 처리
+      };
+    });
+  }, []);
+
+  // 1단계: 조회 실행 — Firebase 캐시 먼저 확인
   const handleQuery = useCallback(async () => {
     if (selectedMachines.size === 0) return;
     if (dateFrom > dateTo) return;
@@ -147,6 +237,13 @@ export default function AnalysisPage() {
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // 동기화 상태 초기화
+    setSyncStatus('idle');
+    setSyncRequestId(null);
+    setSyncProgress(null);
+    setSyncError(null);
+    if (unsubSyncRef.current) { unsubSyncRef.current(); unsubSyncRef.current = null; }
 
     setLoading(true);
     setQueried(true);
@@ -157,111 +254,129 @@ export default function AnalysisPage() {
     setProgress({ done: 0, total: machines.length });
 
     try {
-      // Firebase machine_status_daily에서 기간 데이터를 한 번에 조회
-      const url = `/api/status-daily?start=${dateFrom}&end=${dateTo}`;
-      const res = await fetch(url, { signal: controller.signal });
-      const json = await res.json();
-
-      if (!res.ok || !json.ok) {
-        // 전체 실패 시 모든 장비에 에러 표시
-        const errorMsg = json.error || `HTTP ${res.status}`;
-        setResults(machines.map(def => ({
-          machineNo: def.no,
-          machineName: def.name,
-          mcno: def.mcno!,
-          events: [], states: {}, dailySummary: [],
-          error: errorMsg,
-        })));
-        setLoading(false);
-        return;
-      }
-
-      // entries: MachineStatusDaily[] — 장비×날짜별 레코드
-      // machineNo 기준으로 그룹핑
-      const entries: Array<{
-        machineNo: number; machineName: string; date: string;
-        states: Record<string, StateAccum>;
-        events: Array<{ state: string; startTime: string; endTime: string; durationSeconds: number }>;
-      }> = json.entries || [];
-
-      const byMachine = new Map<number, typeof entries>();
-      for (const entry of entries) {
-        const list = byMachine.get(entry.machineNo) || [];
-        list.push(entry);
-        byMachine.set(entry.machineNo, list);
-      }
-
-      // 선택된 장비별로 MachineResult 조립
-      const allResults: MachineResult[] = machines.map(def => {
-        const dayEntries = byMachine.get(def.no) || [];
-
-        // 전체 기간 이벤트 합치기
-        const allEvents: DspmEvent[] = [];
-        const totalStates: Record<string, StateAccum> = {};
-        const dailySummary: DailySummary[] = [];
-
-        // 날짜순 정렬
-        dayEntries.sort((a, b) => a.date.localeCompare(b.date));
-
-        for (const day of dayEntries) {
-          // 이벤트에 날짜 정보 포함
-          for (const evt of (day.events || [])) {
-            allEvents.push({
-              state: evt.state,
-              startTime: `${day.date} ${evt.startTime}`,
-              endTime: `${day.date} ${evt.endTime}`,
-              durationSeconds: evt.durationSeconds,
-            });
-          }
-
-          // 상태 합산
-          for (const [state, accum] of Object.entries(day.states || {})) {
-            if (!totalStates[state]) totalStates[state] = { totalSeconds: 0, count: 0 };
-            totalStates[state].totalSeconds += accum.totalSeconds;
-            totalStates[state].count += accum.count;
-          }
-
-          // 일별 요약 (데이터 있는 날만)
-          if ((day.events || []).length > 0 || Object.keys(day.states || {}).length > 0) {
-            dailySummary.push({ date: day.date, states: day.states || {} });
-          }
-        }
-
-        return {
-          machineNo: def.no,
-          machineName: def.name,
-          mcno: def.mcno!,
-          events: allEvents,
-          states: totalStates,
-          dailySummary,
-          error: dayEntries.length === 0 ? '해당 기간 누적 데이터 없음 (대시보드가 열려있어야 데이터가 쌓입니다)' : undefined,
-        };
-      });
-
+      const entries = await fetchFirebaseData(controller.signal);
+      const allResults = buildResults(entries, machines);
+      const missing = allResults.filter(r => !r.hasData).length;
+      setMissingMachineCount(missing);
       setProgress({ done: machines.length, total: machines.length });
       setResults(allResults);
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        // 사용자 취소
-      } else {
-        setResults(machines.map(def => ({
-          machineNo: def.no,
-          machineName: def.name,
-          mcno: def.mcno!,
-          events: [], states: {}, dailySummary: [],
-          error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
-        })));
-      }
+      if (err instanceof Error && err.name === 'AbortError') return;
+      setResults(machines.map(def => ({
+        machineNo: def.no,
+        machineName: def.name,
+        mcno: def.mcno!,
+        events: [], states: {}, dailySummary: [],
+        error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+        hasData: false,
+      })));
     }
 
     setLoading(false);
-  }, [selectedMachines, dateFrom, dateTo, allDefs]);
+  }, [selectedMachines, dateFrom, dateTo, allDefs, fetchFirebaseData, buildResults]);
 
-  // 전체 요약 (모든 장비 합산)
+  // 2단계: DSPM 동기화 요청
+  const handleSyncRequest = useCallback(async () => {
+    const machines = allDefs
+      .filter(d => selectedMachines.has(d.no) && d.mcno != null)
+      .map(d => ({ no: d.no, mcno: d.mcno!, name: d.name }));
+
+    if (machines.length === 0) return;
+
+    setSyncStatus('requesting');
+    setSyncError(null);
+
+    try {
+      const res = await fetch('/api/dspm/sync-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dateFrom, dateTo, machines }),
+      });
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
+
+      const requestId = json.requestId;
+      setSyncRequestId(requestId);
+      setSyncStatus('pending');
+
+      // Firebase onSnapshot으로 요청 상태 실시간 감시
+      const unsub = onSnapshot(
+        doc(db, 'dspm_sync_requests', requestId),
+        (snap) => {
+          if (!snap.exists()) return;
+          const data = snap.data();
+          const status = data.status as SyncStatus;
+
+          setSyncStatus(status);
+          if (data.progress) {
+            setSyncProgress(data.progress);
+          }
+          if (data.error) {
+            setSyncError(data.error);
+          }
+
+          // 완료되면 데이터 다시 로드
+          if (status === 'completed') {
+            unsub();
+            unsubSyncRef.current = null;
+            // 약간의 딜레이 후 재조회 (Firebase 쓰기 전파 대기)
+            setTimeout(async () => {
+              try {
+                const controller = new AbortController();
+                const entries = await fetchFirebaseData(controller.signal);
+                const machinesForResults = allDefs.filter(d => selectedMachines.has(d.no) && d.mcno != null);
+                const newResults = buildResults(entries, machinesForResults);
+                const missing = newResults.filter(r => !r.hasData).length;
+                setMissingMachineCount(missing);
+                setResults(newResults);
+              } catch {
+                // 재조회 실패 시 수동 재조회 안내
+              }
+            }, 1500);
+          }
+
+          if (status === 'error') {
+            unsub();
+            unsubSyncRef.current = null;
+          }
+        },
+        () => {
+          setSyncStatus('error');
+          setSyncError('동기화 요청 상태 감시 실패');
+        }
+      );
+
+      unsubSyncRef.current = unsub;
+
+      // 2분 타임아웃
+      setTimeout(() => {
+        if (unsubSyncRef.current === unsub) {
+          // 아직 감시 중이면 타임아웃
+          setSyncStatus(prev => {
+            if (prev === 'pending' || prev === 'processing') {
+              unsub();
+              unsubSyncRef.current = null;
+              return 'timeout';
+            }
+            return prev;
+          });
+        }
+      }, 120000);
+
+    } catch (err) {
+      setSyncStatus('error');
+      setSyncError(err instanceof Error ? err.message : String(err));
+    }
+  }, [allDefs, selectedMachines, dateFrom, dateTo, fetchFirebaseData, buildResults]);
+
+  // 전체 요약 (데이터 있는 장비만)
   const totalSummary = useMemo(() => {
     const states: Record<string, StateAccum> = {};
     for (const r of results) {
-      if (r.error) continue;
+      if (!r.hasData) continue;
       for (const [k, v] of Object.entries(r.states)) {
         if (!states[k]) states[k] = { totalSeconds: 0, count: 0 };
         states[k].totalSeconds += v.totalSeconds;
@@ -279,6 +394,7 @@ export default function AnalysisPage() {
   }, [results]);
 
   const isAllSelected = selectableDefs.length > 0 && selectableDefs.every(d => selectedMachines.has(d.no));
+  const dataExistCount = results.filter(r => r.hasData).length;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
@@ -294,16 +410,9 @@ export default function AnalysisPage() {
                 <h1 className="text-lg font-bold">정지/병목 분석</h1>
                 <p className="text-[11px] text-gray-500">
                   기간·장비를 선택하여 상태 이력 분석
-                  <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-500/15 text-emerald-400">
-                    Firebase 누적
+                  <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-mono bg-cyan-500/15 text-cyan-400">
+                    온디맨드
                   </span>
-                  <a
-                    href="/api/dspm/fix-mcno"
-                    target="_blank"
-                    className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-mono bg-gray-800 text-gray-500 hover:text-gray-300 transition-colors"
-                  >
-                    MCNO확인
-                  </a>
                 </p>
               </div>
             </div>
@@ -374,7 +483,7 @@ export default function AnalysisPage() {
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    조회 중 ({progress.done}/{progress.total})
+                    조회 중...
                   </>
                 ) : (
                   <>
@@ -499,15 +608,21 @@ export default function AnalysisPage() {
               <p className="text-xs text-gray-600 mt-1">
                 좌측에서 장비를 선택하고 상단 [조회] 버튼을 클릭하세요
               </p>
+              <div className="mt-6 p-4 rounded-xl bg-gray-900/50 border border-gray-800 max-w-md">
+                <p className="text-[11px] text-gray-500 leading-relaxed">
+                  <span className="text-cyan-400 font-medium">💡 온디맨드 조회 방식</span><br/>
+                  Firebase에 캐시된 데이터를 먼저 확인합니다.<br/>
+                  데이터가 없는 기간은 사내PC의 동기화 스크립트를 통해<br/>
+                  DSPM에서 과거 이력을 가져올 수 있습니다.
+                </p>
+              </div>
             </div>
           ) : loading && results.length === 0 ? (
             /* 초기 로딩 */
             <div className="flex items-center justify-center h-full">
               <div className="flex flex-col items-center gap-3 text-gray-400">
                 <Loader2 className="w-8 h-8 animate-spin" />
-                <span className="text-sm">
-                  DSPM 이력 조회 중... ({progress.done}/{progress.total})
-                </span>
+                <span className="text-sm">Firebase 데이터 확인 중...</span>
               </div>
             </div>
           ) : results.length === 0 && !loading ? (
@@ -519,36 +634,48 @@ export default function AnalysisPage() {
           ) : (
             /* 결과 표시 */
             <div className="p-6 space-y-6">
-              {/* 전체 요약 */}
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-base font-bold text-gray-200">
-                      전체 요약
-                    </h2>
-                    <p className="text-[11px] text-gray-500 mt-0.5">
-                      {dateFrom} ~ {dateTo} · {results.filter(r => !r.error).length}대 장비
-                      {loading && <span className="text-blue-400 ml-2">조회 진행 중...</span>}
-                    </p>
-                  </div>
-                  {!loading && (
-                    <button
-                      onClick={handleQuery}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 text-xs text-gray-400 hover:bg-gray-700 hover:text-white transition-colors"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      재조회
-                    </button>
-                  )}
-                </div>
+              {/* 동기화 요청 배너 — 데이터 없는 장비가 있을 때 */}
+              {missingMachineCount > 0 && (
+                <SyncBanner
+                  missingCount={missingMachineCount}
+                  totalCount={results.length}
+                  syncStatus={syncStatus}
+                  syncProgress={syncProgress}
+                  syncError={syncError}
+                  onSyncRequest={handleSyncRequest}
+                  onRetryQuery={handleQuery}
+                />
+              )}
 
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <SummaryCard label="가동" value={formatSeconds(totalSummary.runSec)} sub={`${totalSummary.states.RUN?.count || 0}회`} color="emerald" icon={Play} />
-                  <SummaryCard label="대기" value={formatSeconds(totalSummary.idleSec)} sub={`${totalSummary.states.IDLE?.count || 0}회`} color="amber" icon={Pause} />
-                  <SummaryCard label="정지" value={formatSeconds(totalSummary.stopSec)} sub={`${Object.entries(totalSummary.states).filter(([k]) => k !== 'RUN' && k !== 'IDLE').reduce((a, [, v]) => a + v.count, 0)}회`} color="rose" icon={AlertTriangle} />
-                  <SummaryCard label="가동률" value={`${totalSummary.opRate.toFixed(1)}%`} sub={`총 ${formatSeconds(totalSummary.total)}`} color="blue" icon={Activity} />
+              {/* 전체 요약 */}
+              {dataExistCount > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="text-base font-bold text-gray-200">전체 요약</h2>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {dateFrom} ~ {dateTo} · {dataExistCount}대 장비 (데이터 있음)
+                      </p>
+                    </div>
+                    {!loading && (
+                      <button
+                        onClick={handleQuery}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 text-xs text-gray-400 hover:bg-gray-700 hover:text-white transition-colors"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        재조회
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <SummaryCard label="가동" value={formatSeconds(totalSummary.runSec)} sub={`${totalSummary.states.RUN?.count || 0}회`} color="emerald" icon={Play} />
+                    <SummaryCard label="대기" value={formatSeconds(totalSummary.idleSec)} sub={`${totalSummary.states.IDLE?.count || 0}회`} color="amber" icon={Pause} />
+                    <SummaryCard label="정지" value={formatSeconds(totalSummary.stopSec)} sub={`${Object.entries(totalSummary.states).filter(([k]) => k !== 'RUN' && k !== 'IDLE').reduce((a, [, v]) => a + v.count, 0)}회`} color="rose" icon={AlertTriangle} />
+                    <SummaryCard label="가동률" value={`${totalSummary.opRate.toFixed(1)}%`} sub={`총 ${formatSeconds(totalSummary.total)}`} color="blue" icon={Activity} />
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* 장비별 결과 */}
               <div>
@@ -561,6 +688,7 @@ export default function AnalysisPage() {
                       stopCodeMap={stopCodeMap}
                       expanded={expandedMachine === r.machineNo}
                       onToggle={() => setExpandedMachine(expandedMachine === r.machineNo ? null : r.machineNo)}
+                      syncStatus={syncStatus}
                     />
                   ))}
                 </div>
@@ -568,6 +696,150 @@ export default function AnalysisPage() {
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 동기화 요청 배너 ── */
+function SyncBanner({
+  missingCount,
+  totalCount,
+  syncStatus,
+  syncProgress,
+  syncError,
+  onSyncRequest,
+  onRetryQuery,
+}: {
+  missingCount: number;
+  totalCount: number;
+  syncStatus: SyncStatus;
+  syncProgress: { total: number; done: number; currentMachine: string } | null;
+  syncError: string | null;
+  onSyncRequest: () => void;
+  onRetryQuery: () => void;
+}) {
+  if (syncStatus === 'completed') {
+    return (
+      <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <Wifi className="w-5 h-5 text-emerald-400" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-emerald-300">동기화 완료</p>
+            <p className="text-[11px] text-emerald-400/60 mt-0.5">
+              DSPM 이력 데이터가 Firebase에 저장되었습니다
+            </p>
+          </div>
+          <button
+            onClick={onRetryQuery}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-xs text-emerald-300 hover:bg-emerald-500/20 transition-colors"
+          >
+            <RefreshCw className="w-3 h-3" />
+            새로고침
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (syncStatus === 'error') {
+    return (
+      <div className="bg-rose-500/5 border border-rose-500/20 rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-rose-400" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-rose-300">동기화 오류</p>
+            <p className="text-[11px] text-rose-400/60 mt-0.5">{syncError || '알 수 없는 오류'}</p>
+          </div>
+          <button
+            onClick={onSyncRequest}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-500/10 text-xs text-rose-300 hover:bg-rose-500/20 transition-colors"
+          >
+            재시도
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (syncStatus === 'timeout') {
+    return (
+      <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <WifiOff className="w-5 h-5 text-amber-400" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-amber-300">동기화 응답 없음</p>
+            <p className="text-[11px] text-amber-400/60 mt-0.5">
+              사내PC에서 <code className="font-mono bg-amber-500/10 px-1 rounded">dspm-log-sync</code> 스크립트가 실행 중인지 확인해주세요
+            </p>
+          </div>
+          <button
+            onClick={onSyncRequest}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 text-xs text-amber-300 hover:bg-amber-500/20 transition-colors"
+          >
+            재시도
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (syncStatus === 'pending' || syncStatus === 'processing' || syncStatus === 'requesting') {
+    return (
+      <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-blue-300">
+              {syncStatus === 'requesting' ? 'DSPM 동기화 요청 중...' :
+               syncStatus === 'pending' ? '사내PC 스크립트 대기 중...' :
+               'DSPM 이력 데이터 가져오는 중...'}
+            </p>
+            {syncProgress && (
+              <div className="mt-2">
+                <div className="flex items-center justify-between text-[11px] text-blue-400/60 mb-1">
+                  <span>{syncProgress.currentMachine}</span>
+                  <span>{syncProgress.done} / {syncProgress.total}</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                    style={{ width: `${syncProgress.total > 0 ? (syncProgress.done / syncProgress.total * 100) : 0}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            {syncStatus === 'pending' && (
+              <p className="text-[11px] text-blue-400/40 mt-1">
+                사내PC에서 dspm-log-sync 스크립트가 실행 중이어야 합니다
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // idle — 동기화 미요청 상태
+  return (
+    <div className="bg-cyan-500/5 border border-cyan-500/20 rounded-xl p-4">
+      <div className="flex items-center gap-3">
+        <Download className="w-5 h-5 text-cyan-400" />
+        <div className="flex-1">
+          <p className="text-sm font-medium text-cyan-300">
+            {missingCount}대 장비의 데이터가 없습니다
+          </p>
+          <p className="text-[11px] text-cyan-400/60 mt-0.5">
+            사내PC에서 DSPM 과거 이력을 가져와 Firebase에 저장할 수 있습니다
+          </p>
+        </div>
+        <button
+          onClick={onSyncRequest}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan-600 text-sm font-semibold text-white hover:bg-cyan-500 transition-colors shadow-lg shadow-cyan-600/20"
+        >
+          <Download className="w-4 h-4" />
+          DSPM 동기화 요청
+        </button>
       </div>
     </div>
   );
@@ -608,11 +880,13 @@ function MachineResultCard({
   stopCodeMap,
   expanded,
   onToggle,
+  syncStatus,
 }: {
   result: MachineResult;
   stopCodeMap: Record<string, string>;
   expanded: boolean;
   onToggle: () => void;
+  syncStatus: SyncStatus;
 }) {
   const runSec = r.states?.RUN?.totalSeconds || 0;
   const idleSec = r.states?.IDLE?.totalSeconds || 0;
@@ -649,7 +923,33 @@ function MachineResultCard({
     );
   }
 
-  if (r.events.length === 0) {
+  // 데이터 없는 장비 — 동기화 상태에 따라 표시
+  if (!r.hasData) {
+    const isSyncing = syncStatus === 'pending' || syncStatus === 'processing' || syncStatus === 'requesting';
+    return (
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-gray-600 font-mono">{String(r.machineNo).padStart(2, '0')}</span>
+          <span className="text-sm text-gray-300">{r.machineName}</span>
+          <span className="text-[10px] text-gray-600">MCNO {r.mcno}</span>
+          <span className={`text-[10px] ml-auto ${isSyncing ? 'text-blue-400' : 'text-gray-600'}`}>
+            {isSyncing ? (
+              <span className="flex items-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                동기화 중...
+              </span>
+            ) : syncStatus === 'completed' ? (
+              <span className="text-emerald-400">동기화 완료 — 새로고침하세요</span>
+            ) : (
+              '데이터 없음'
+            )}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (r.events.length === 0 && Object.keys(r.states).length === 0) {
     return (
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
         <div className="flex items-center gap-3">

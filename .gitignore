@@ -36,6 +36,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Firebase service account key (절대 커밋 금지)
+serviceAccountKey.json
+**/serviceAccountKey.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

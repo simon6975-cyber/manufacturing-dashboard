@@ -12,8 +12,6 @@ import {
 } from 'lucide-react';
 import { useMachineDefs } from '@/lib/machine-defs';
 import { useStopCodes } from '@/lib/useStopCodes';
-import { db } from '@/lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
 
 /* ── 타입 ── */
 interface DspmEvent {
@@ -115,12 +113,12 @@ export default function AnalysisPage() {
   const { defs: machineDefs, allDefs, loading: defsLoading } = useMachineDefs();
   const { codeMap: stopCodeMap } = useStopCodes();
   const abortRef = useRef<AbortController | null>(null);
-  const unsubSyncRef = useRef<(() => void) | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // 동기화 요청 감시 해제
+  // 폴링 타이머 정리
   useEffect(() => {
     return () => {
-      if (unsubSyncRef.current) unsubSyncRef.current();
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     };
   }, []);
 
@@ -243,7 +241,7 @@ export default function AnalysisPage() {
     setSyncRequestId(null);
     setSyncProgress(null);
     setSyncError(null);
-    if (unsubSyncRef.current) { unsubSyncRef.current(); unsubSyncRef.current = null; }
+    if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
 
     setLoading(true);
     setQueried(true);
@@ -283,6 +281,9 @@ export default function AnalysisPage() {
 
     if (machines.length === 0) return;
 
+    // 기존 폴링 정리
+    if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null; }
+
     setSyncStatus('requesting');
     setSyncError(null);
 
@@ -302,27 +303,39 @@ export default function AnalysisPage() {
       setSyncRequestId(requestId);
       setSyncStatus('pending');
 
-      // Firebase onSnapshot으로 요청 상태 실시간 감시
-      const unsub = onSnapshot(
-        doc(db, 'dspm_sync_requests', requestId),
-        (snap) => {
-          if (!snap.exists()) return;
-          const data = snap.data();
-          const status = data.status as SyncStatus;
+      // API 폴링으로 요청 상태 감시 (3초 간격)
+      let elapsed = 0;
+      const POLL_INTERVAL = 3000;
+      const TIMEOUT = 120000;
 
+      const timer = setInterval(async () => {
+        elapsed += POLL_INTERVAL;
+
+        // 타임아웃 체크
+        if (elapsed >= TIMEOUT) {
+          clearInterval(timer);
+          pollTimerRef.current = null;
+          setSyncStatus(prev => {
+            if (prev === 'pending' || prev === 'processing') return 'timeout';
+            return prev;
+          });
+          return;
+        }
+
+        try {
+          const pollRes = await fetch(`/api/dspm/sync-request?id=${requestId}`);
+          const pollJson = await pollRes.json();
+          if (!pollRes.ok || !pollJson.ok) return;
+
+          const status = pollJson.status as SyncStatus;
           setSyncStatus(status);
-          if (data.progress) {
-            setSyncProgress(data.progress);
-          }
-          if (data.error) {
-            setSyncError(data.error);
-          }
+          if (pollJson.progress) setSyncProgress(pollJson.progress);
+          if (pollJson.error) setSyncError(pollJson.error);
 
-          // 완료되면 데이터 다시 로드
+          // 완료 시 폴링 중지 + 데이터 재조회
           if (status === 'completed') {
-            unsub();
-            unsubSyncRef.current = null;
-            // 약간의 딜레이 후 재조회 (Firebase 쓰기 전파 대기)
+            clearInterval(timer);
+            pollTimerRef.current = null;
             setTimeout(async () => {
               try {
                 const controller = new AbortController();
@@ -333,38 +346,22 @@ export default function AnalysisPage() {
                 setMissingMachineCount(missing);
                 setResults(newResults);
               } catch {
-                // 재조회 실패 시 수동 재조회 안내
+                // 재조회 실패 — 수동 재조회 안내
               }
             }, 1500);
           }
 
+          // 에러 시 폴링 중지
           if (status === 'error') {
-            unsub();
-            unsubSyncRef.current = null;
+            clearInterval(timer);
+            pollTimerRef.current = null;
           }
-        },
-        () => {
-          setSyncStatus('error');
-          setSyncError('동기화 요청 상태 감시 실패');
+        } catch {
+          // 네트워크 오류 — 다음 폴링에서 재시도
         }
-      );
+      }, POLL_INTERVAL);
 
-      unsubSyncRef.current = unsub;
-
-      // 2분 타임아웃
-      setTimeout(() => {
-        if (unsubSyncRef.current === unsub) {
-          // 아직 감시 중이면 타임아웃
-          setSyncStatus(prev => {
-            if (prev === 'pending' || prev === 'processing') {
-              unsub();
-              unsubSyncRef.current = null;
-              return 'timeout';
-            }
-            return prev;
-          });
-        }
-      }, 120000);
+      pollTimerRef.current = timer;
 
     } catch (err) {
       setSyncStatus('error');

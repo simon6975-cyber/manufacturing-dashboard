@@ -1,5 +1,5 @@
 // src/app/analysis/page.tsx
-// v2.10.4 — 정지/병목분석: 기간 선택 + 복수 장비 선택 + DSPM 온디맨드 조회
+// v2.10.8 — 정지/병목분석: Firebase 누적 데이터 기반 조회 (Vercel↔DSPM 직접호출 제거)
 'use client';
 
 import React, { useState, useMemo, useCallback, useRef } from 'react';
@@ -138,7 +138,8 @@ export default function AnalysisPage() {
     });
   }, []);
 
-  // 조회 실행
+  // 조회 실행 — Firebase machine_status_daily 데이터 사용
+  // (대시보드 동기화 스크립트가 DSPM → Firebase에 누적해둔 데이터를 읽음)
   const handleQuery = useCallback(async () => {
     if (selectedMachines.size === 0) return;
     if (dateFrom > dateTo) return;
@@ -154,68 +155,103 @@ export default function AnalysisPage() {
 
     const machines = allDefs.filter(d => selectedMachines.has(d.no) && d.mcno != null);
     setProgress({ done: 0, total: machines.length });
-    const allResults: MachineResult[] = [];
 
-    // 3개씩 병렬 fetch (DSPM 서버 부하 분산)
-    const batchSize = 3;
-    for (let i = 0; i < machines.length; i += batchSize) {
-      if (controller.signal.aborted) break;
-      const batch = machines.slice(i, i + batchSize);
-      const batchResults = await Promise.allSettled(
-        batch.map(async (def) => {
-          try {
-            const url = `/api/dspm/log?mcno=${def.mcno}&dateFrom=${dateFrom}&dateTo=${dateTo}`;
-            const res = await fetch(url, { signal: controller.signal });
-            let json;
-            try {
-              json = await res.json();
-            } catch {
-              return {
-                machineNo: def.no,
-                machineName: def.name,
-                mcno: def.mcno!,
-                events: [], states: {}, dailySummary: [],
-                error: `API 응답 파싱 실패 (HTTP ${res.status})`,
-              } as MachineResult;
-            }
-            if (!res.ok || !json.ok) {
-              return {
-                machineNo: def.no,
-                machineName: def.name,
-                mcno: def.mcno!,
-                events: [], states: {}, dailySummary: [],
-                error: json.error || `HTTP ${res.status}`,
-              } as MachineResult;
-            }
-            return {
-              machineNo: def.no,
-              machineName: def.name,
-              mcno: def.mcno!,
-              events: json.events || [],
-              states: json.states || {},
-              dailySummary: json.dailySummary || [],
-            } as MachineResult;
-          } catch (err: unknown) {
-            if (err instanceof Error && err.name === 'AbortError') throw err;
-            return {
-              machineNo: def.no,
-              machineName: def.name,
-              mcno: def.mcno!,
-              events: [], states: {}, dailySummary: [],
-              error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
-            } as MachineResult;
-          }
-        })
-      );
+    try {
+      // Firebase machine_status_daily에서 기간 데이터를 한 번에 조회
+      const url = `/api/status-daily?start=${dateFrom}&end=${dateTo}`;
+      const res = await fetch(url, { signal: controller.signal });
+      const json = await res.json();
 
-      for (const r of batchResults) {
-        if (r.status === 'fulfilled') {
-          allResults.push(r.value);
-        }
-        // rejected = AbortError (사용자 취소) → 무시
+      if (!res.ok || !json.ok) {
+        // 전체 실패 시 모든 장비에 에러 표시
+        const errorMsg = json.error || `HTTP ${res.status}`;
+        setResults(machines.map(def => ({
+          machineNo: def.no,
+          machineName: def.name,
+          mcno: def.mcno!,
+          events: [], states: {}, dailySummary: [],
+          error: errorMsg,
+        })));
+        setLoading(false);
+        return;
       }
-      setProgress({ done: Math.min(i + batchSize, machines.length), total: machines.length });
-      setResults([...allResults]); // 중간 결과 업데이트
+
+      // entries: MachineStatusDaily[] — 장비×날짜별 레코드
+      // machineNo 기준으로 그룹핑
+      const entries: Array<{
+        machineNo: number; machineName: string; date: string;
+        states: Record<string, StateAccum>;
+        events: Array<{ state: string; startTime: string; endTime: string; durationSeconds: number }>;
+      }> = json.entries || [];
+
+      const byMachine = new Map<number, typeof entries>();
+      for (const entry of entries) {
+        const list = byMachine.get(entry.machineNo) || [];
+        list.push(entry);
+        byMachine.set(entry.machineNo, list);
+      }
+
+      // 선택된 장비별로 MachineResult 조립
+      const allResults: MachineResult[] = machines.map(def => {
+        const dayEntries = byMachine.get(def.no) || [];
+
+        // 전체 기간 이벤트 합치기
+        const allEvents: DspmEvent[] = [];
+        const totalStates: Record<string, StateAccum> = {};
+        const dailySummary: DailySummary[] = [];
+
+        // 날짜순 정렬
+        dayEntries.sort((a, b) => a.date.localeCompare(b.date));
+
+        for (const day of dayEntries) {
+          // 이벤트에 날짜 정보 포함
+          for (const evt of (day.events || [])) {
+            allEvents.push({
+              state: evt.state,
+              startTime: `${day.date} ${evt.startTime}`,
+              endTime: `${day.date} ${evt.endTime}`,
+              durationSeconds: evt.durationSeconds,
+            });
+          }
+
+          // 상태 합산
+          for (const [state, accum] of Object.entries(day.states || {})) {
+            if (!totalStates[state]) totalStates[state] = { totalSeconds: 0, count: 0 };
+            totalStates[state].totalSeconds += accum.totalSeconds;
+            totalStates[state].count += accum.count;
+          }
+
+          // 일별 요약 (데이터 있는 날만)
+          if ((day.events || []).length > 0 || Object.keys(day.states || {}).length > 0) {
+            dailySummary.push({ date: day.date, states: day.states || {} });
+          }
+        }
+
+        return {
+          machineNo: def.no,
+          machineName: def.name,
+          mcno: def.mcno!,
+          events: allEvents,
+          states: totalStates,
+          dailySummary,
+          error: dayEntries.length === 0 ? '해당 기간 누적 데이터 없음 (대시보드가 열려있어야 데이터가 쌓입니다)' : undefined,
+        };
+      });
+
+      setProgress({ done: machines.length, total: machines.length });
+      setResults(allResults);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        // 사용자 취소
+      } else {
+        setResults(machines.map(def => ({
+          machineNo: def.no,
+          machineName: def.name,
+          mcno: def.mcno!,
+          events: [], states: {}, dailySummary: [],
+          error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+        })));
+      }
     }
 
     setLoading(false);
@@ -257,21 +293,14 @@ export default function AnalysisPage() {
               <div>
                 <h1 className="text-lg font-bold">정지/병목 분석</h1>
                 <p className="text-[11px] text-gray-500">
-                  기간·장비를 선택하여 DSPM 상태 이력 분석
-                  <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-mono bg-blue-500/15 text-blue-400">
-                    DSPM LOG
+                  기간·장비를 선택하여 상태 이력 분석
+                  <span className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-500/15 text-emerald-400">
+                    Firebase 누적
                   </span>
-                  <a
-                    href="/api/dspm/diag"
-                    target="_blank"
-                    className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-mono bg-gray-800 text-gray-500 hover:text-gray-300 transition-colors"
-                  >
-                    진단
-                  </a>
                   <a
                     href="/api/dspm/fix-mcno"
                     target="_blank"
-                    className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-gray-800 text-gray-500 hover:text-gray-300 transition-colors"
+                    className="ml-2 px-1.5 py-0.5 rounded text-[9px] font-mono bg-gray-800 text-gray-500 hover:text-gray-300 transition-colors"
                   >
                     MCNO확인
                   </a>

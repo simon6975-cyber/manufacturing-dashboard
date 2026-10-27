@@ -15,27 +15,47 @@ export interface MachineDef {
   equipmentGroup?: string; // 장비군 이름 (같은 이름끼리 한 장비군으로 묶임)
 }
 
+// ─── DSPM MCNO 매핑 기준표 (2026-10-27 스크린샷 기준) ───
+// MCNO 60 = IPHD양면-3호기  → 연속지출력 1호기 (no:1)
+// MCNO 52 = IPHD양면_2호기  → 연속지출력 2호기 (no:2)
+// MCNO 49 = Technau_1호기   → 롤재단 1호기 (no:3)
+// MCNO 50 = Technau_2호기   → 롤재단 2호기 (no:4)
+// MCNO 62 = 코팅기-1호기    → 코팅 1호기 (no:7)
+// MCNO 61 = 코팅기-2호기    → 코팅 2호기 (no:8)
+// MCNO 73 = 에폭시_1호기    → 에폭시 1호기 (no:9)
+// MCNO 74 = 에폭시_2호기    → 에폭시 2호기 (no:20) ← 신규
+// MCNO 30 = 제본기_1호기    → 제본 1호기 (no:12)
+// MCNO 43 = 제본기_2호기    → 제본 2호기 (no:13)
+// MCNO 54 = 제본기_3호기    → 제본 3호기 (no:14)
+// MCNO 29 = 중철기_1호기    → 중철기 (no:15)
+// MCNO 48 = 코올리나_1호기  → 코올리나 1호기 (no:21) ← 신규
+// MCNO 70 = 코올리나_2호기  → 코올리나 2호기 (no:22) ← 신규
+
 // 기본 장비 정의 (Firebase에 데이터 없을 때 사용)
 export const DEFAULT_MACHINES: MachineDef[] = [
-  { no:1,  name:'연속지출력 1호기', model:'520HD+',       maker:'SCREEN',     group:'내지', equipmentGroup:'연속지출력기' },
-  { no:2,  name:'연속지출력 2호기', model:'520HD+',       maker:'SCREEN',     group:'내지', equipmentGroup:'연속지출력기' },
-  { no:3,  name:'롤재단 1호기',     model:'S2020',        maker:'TECHNAU',    group:'내지', equipmentGroup:'롤재단' },
-  { no:4,  name:'롤재단 2호기',     model:'S2320',        maker:'TECHNAU',    group:'내지', equipmentGroup:'롤재단' },
+  { no:1,  name:'연속지출력 1호기', model:'520HD+',       maker:'SCREEN',     group:'내지', mcno:60, equipmentGroup:'연속지출력기' },
+  { no:2,  name:'연속지출력 2호기', model:'520HD+',       maker:'SCREEN',     group:'내지', mcno:52, equipmentGroup:'연속지출력기' },
+  { no:3,  name:'롤재단 1호기',     model:'S2020',        maker:'TECHNAU',    group:'내지', mcno:49, equipmentGroup:'롤재단' },
+  { no:4,  name:'롤재단 2호기',     model:'S2320',        maker:'TECHNAU',    group:'내지', mcno:50, equipmentGroup:'롤재단' },
   { no:5,  name:'날장출력 1호기',   model:'이리데스',      maker:'FUJI FILM',  group:'표지', equipmentGroup:'낱장출력' },
   { no:6,  name:'날장출력 2호기',   model:'레보리아',      maker:'FUJI FILM',  group:'표지', equipmentGroup:'낱장출력' },
-  { no:7,  name:'코팅 1호기',       model:'EUROLAM 540',  maker:'GMP',        group:'표지', equipmentGroup:'코팅' },
-  { no:8,  name:'코팅 2호기',       model:'PROTOPIC 540', maker:'GMP',        group:'표지', equipmentGroup:'코팅' },
-  { no:9,  name:'에폭시',           model:'DDC 810',      maker:'DUPLO',      group:'표지', equipmentGroup:'에폭시' },
+  { no:7,  name:'코팅 1호기',       model:'EUROLAM 540',  maker:'GMP',        group:'표지', mcno:62, equipmentGroup:'코팅' },
+  { no:8,  name:'코팅 2호기',       model:'PROTOPIC 540', maker:'GMP',        group:'표지', mcno:61, equipmentGroup:'코팅' },
+  { no:9,  name:'에폭시 1호기',     model:'DDC 810',      maker:'DUPLO',      group:'표지', mcno:73, equipmentGroup:'에폭시' },
   { no:10, name:'낱장재단 1호기',   model:'POLAR 92',     maker:'HEIDELBERG', group:'표지', equipmentGroup:'낱장재단' },
   { no:11, name:'낱장재단 2호기',   model:'C860',         maker:'대호',        group:'표지', equipmentGroup:'낱장재단' },
-  { no:12, name:'제본 1호기',       model:'BQ470/HT80',   maker:'HORIZON',    group:'제본', equipmentGroup:'제본' },
-  { no:13, name:'제본 2호기',       model:'BQ470/HT80',   maker:'HORIZON',    group:'제본', equipmentGroup:'제본' },
-  { no:14, name:'제본 3호기',       model:'BQ500/HT300',  maker:'HORIZON',    group:'제본', equipmentGroup:'제본' },
-  { no:15, name:'중철기',           model:'SPF-200A',     maker:'HORIZON',    group:'제본', equipmentGroup:'중철기' },
+  { no:12, name:'제본 1호기',       model:'BQ470/HT80',   maker:'HORIZON',    group:'제본', mcno:30, equipmentGroup:'제본' },
+  { no:13, name:'제본 2호기',       model:'BQ470/HT80',   maker:'HORIZON',    group:'제본', mcno:43, equipmentGroup:'제본' },
+  { no:14, name:'제본 3호기',       model:'BQ500/HT300',  maker:'HORIZON',    group:'제본', mcno:54, equipmentGroup:'제본' },
+  { no:15, name:'중철기',           model:'SPF-200A',     maker:'HORIZON',    group:'제본', mcno:29, equipmentGroup:'중철기' },
   { no:16, name:'날개접지기',       model:'ZK320',        maker:'',           group:'제본', equipmentGroup:'날개접지기' },
   { no:17, name:'시험지접지기',     model:'CSMO',         maker:'HUNKELER',   group:'제본', equipmentGroup:'시험지접지기' },
   { no:18, name:'박스포장',         model:'',             maker:'',           group:'포장', equipmentGroup:'포장' },
   { no:19, name:'댐지포장',         model:'',             maker:'',           group:'포장', equipmentGroup:'포장' },
+  // ▼ DSPM 실측 장비 중 기존 대시보드에 없던 장비 (v2.10.6 추가)
+  { no:20, name:'에폭시 2호기',     model:'',             maker:'DUPLO',      group:'표지', mcno:74, equipmentGroup:'에폭시' },
+  { no:21, name:'코올리나 1호기',   model:'',             maker:'',           group:'표지', mcno:48, equipmentGroup:'코올리나' },
+  { no:22, name:'코올리나 2호기',   model:'',             maker:'',           group:'표지', mcno:70, equipmentGroup:'코올리나' },
 ];
 
 // Firebase에 장비 정보 저장

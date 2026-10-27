@@ -268,6 +268,13 @@ export default function AnalysisPage() {
                   >
                     진단
                   </a>
+                  <a
+                    href="/api/dspm/fix-mcno"
+                    target="_blank"
+                    className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-mono bg-gray-800 text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    MCNO확인
+                  </a>
                 </p>
               </div>
             </div>

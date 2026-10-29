@@ -232,12 +232,46 @@ const ProcessCard: React.FC<{ process:ProcessData; onSelect?:(no:number)=>void }
 // ============================================
 // 장비군 컴포넌트
 // ============================================
+// ============================================
+// 장비군 대기물량
+// ============================================
+// 내지·표지: 앞 공정 금일완료(DSPM DAYCOMCNT) − 이 공정 금일완료 = 대기물량 (0 미만이면 0)
+//   - 각 공정의 첫 장비군(연속지출력기·낱장출력)은 앞 공정이 없어 0 — 투입 기준은 추후 정의
+//   - 페이지 → 장 으로 넘어갈 때는 양면 기준 ÷2 (낱장출력 → 코팅)
+//   - 건수는 DSPM에 작업 건수 데이터가 없어 null('-') — 출처 정해지면 연결
+// 제본·포장: 아직 실데이터 미연결 — 기존 시뮬레이션 값 유지
+interface GroupQueue { queue: number; count: number | null; }
+const REAL_QUEUE_PROCESSES = ['내지', '표지'];
+
+function computeGroupQueues(groupsByProcess: Record<string, DynamicEquipmentGroup[]>, machineMap: Record<number, ProcessData>): Record<string, GroupQueue> {
+  const machinesOf = (g: DynamicEquipmentGroup) => g.machines.map(no => machineMap[no]).filter(Boolean);
+  const completedOf = (g: DynamicEquipmentGroup) => machinesOf(g).reduce((sum, m) => sum + (m.dayCompletedCount || 0), 0);
+  const result: Record<string, GroupQueue> = {};
+  for (const [processGroup, groups] of Object.entries(groupsByProcess)) {
+    groups.forEach((g, i) => {
+      if (REAL_QUEUE_PROCESSES.includes(processGroup)) {
+        if (i === 0) { result[g.id] = { queue: 0, count: null }; return; }
+        const prev = groups[i - 1];
+        const factor = getCountUnit(prev.name) === '페이지' && getCountUnit(g.name) === '장' ? 0.5 : 1;
+        result[g.id] = { queue: Math.max(0, Math.round(completedOf(prev) * factor) - completedOf(g)), count: null };
+      } else {
+        const active = machinesOf(g).filter(m => toDisplay(m.status) !== 'IDLE');
+        result[g.id] = {
+          queue: active.reduce((sum, m) => sum + m.queue, 0),
+          count: active.reduce((sum, m) => sum + m.queueCount, 0),
+        };
+      }
+    });
+  }
+  return result;
+}
+
 const EquipmentGroupComp: React.FC<{
-  group: DynamicEquipmentGroup; machineMap: Record<number,ProcessData>; onSelect:(no:number)=>void; now:number;
-}> = ({ group, machineMap, onSelect, now }) => {
+  group: DynamicEquipmentGroup; machineMap: Record<number,ProcessData>; onSelect:(no:number)=>void; now:number; queueInfo?: GroupQueue;
+}> = ({ group, machineMap, onSelect, now, queueInfo }) => {
   const machines = group.machines.map(no=>machineMap[no]).filter(Boolean);
-  const totalQueue = machines.reduce((s,m)=>{ const ds=toDisplay(m.status); return s+(ds==='IDLE'?0:m.queue); },0);
-  const totalQueueCount = machines.reduce((s,m)=>{ const ds=toDisplay(m.status); return s+(ds==='IDLE'?0:m.queueCount); },0);
+  const totalQueue = queueInfo?.queue ?? 0;
+  const totalQueueCount = queueInfo?.count ?? null;
   const isOverloaded = totalQueue >= DEFAULT_QUEUE_THRESHOLD;
 
   const overloadStartRef = useRef<number|null>(null);
@@ -256,7 +290,7 @@ const EquipmentGroupComp: React.FC<{
         <p className="text-[10px] font-bold text-gray-300 truncate">{group.name}</p>
         <div className="flex items-center gap-2 text-[9px] mt-0.5">
           <span className="text-amber-300">대기물량 <span className="font-bold font-mono">{totalQueue.toLocaleString()}</span></span>
-          <span className="text-sky-300">건수 <span className="font-bold font-mono">{totalQueueCount}</span></span>
+          <span className="text-sky-300">건수 <span className="font-bold font-mono">{totalQueueCount ?? '-'}</span></span>
         </div>
         {isOverloaded && (
           <div className="flex items-center gap-1 mt-1 pt-1 border-t border-amber-500/20">
@@ -578,28 +612,20 @@ const ProcessFlowDiagram: React.FC = () => {
     return c;
   },[p]);
 
+  // 장비군별 대기물량·건수 (내지·표지는 실데이터 — computeGroupQueues 주석 참고)
+  const groupQueues = useMemo(() => computeGroupQueues(groupsByProcess, p), [groupsByProcess, p]);
+
   // 대기물량 초과 장비군 수
   const overloadedGroupCount = useMemo(()=>{
-    return dynamicGroups.filter(g=>{
-      const total = g.machines.reduce((s,no)=>{
-        const m = p[no];
-        if(!m) return s;
-        return s + (toDisplay(m.status)==='IDLE' ? 0 : m.queue);
-      },0);
-      return total >= DEFAULT_QUEUE_THRESHOLD;
-    }).length;
-  },[p, dynamicGroups]);
+    return Object.values(groupQueues).filter(q => q.queue >= DEFAULT_QUEUE_THRESHOLD).length;
+  },[groupQueues]);
 
   const totals = useMemo(()=>{
     let queue=0,queueCount=0,completed=0;
-    Object.values(p).forEach(proc=>{
-      const ds=toDisplay(proc.status);
-      queue+=ds==='IDLE'?0:proc.queue;
-      queueCount+=ds==='IDLE'?0:proc.queueCount;
-      completed+=proc.completed;
-    });
+    Object.values(groupQueues).forEach(q=>{ queue+=q.queue; queueCount+=q.count ?? 0; });
+    Object.values(p).forEach(proc=>{ completed+=proc.completed; });
     return {queue,queueCount,completed};
-  },[p]);
+  },[p, groupQueues]);
 
   useEffect(()=>{ const h=(e:KeyboardEvent)=>{if(e.key==='Escape')setSelectedNo(null);}; window.addEventListener('keydown',h); return()=>window.removeEventListener('keydown',h); },[]);
 
@@ -649,7 +675,7 @@ const ProcessFlowDiagram: React.FC = () => {
                     {groupsByProcess['내지'].map((g, i) => (
                       <React.Fragment key={g.id}>
                         {i > 0 && <Arrow />}
-                        <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now} />
+                        <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} />
                       </React.Fragment>
                     ))}
                   </div>
@@ -662,7 +688,7 @@ const ProcessFlowDiagram: React.FC = () => {
                     {groupsByProcess['표지'].map((g, i) => (
                       <React.Fragment key={g.id}>
                         {i > 0 && <Arrow />}
-                        <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now} />
+                        <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} />
                       </React.Fragment>
                     ))}
                   </div>
@@ -679,7 +705,7 @@ const ProcessFlowDiagram: React.FC = () => {
               <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['제본']}`}>제본</span>
               <div className="flex flex-col gap-1.5">
                 {groupsByProcess['제본'].map(g => (
-                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} />
+                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} />
                 ))}
               </div>
             </div>
@@ -693,7 +719,7 @@ const ProcessFlowDiagram: React.FC = () => {
               <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['포장']}`}>포장</span>
               <div className="flex flex-col gap-1.5">
                 {groupsByProcess['포장'].map(g => (
-                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} />
+                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} />
                 ))}
               </div>
             </div>

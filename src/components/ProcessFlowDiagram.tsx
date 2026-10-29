@@ -401,7 +401,8 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
           <BarChart data={last7} margin={{top:5,right:5,bottom:0,left:-12}}>
             <XAxis dataKey="day" tick={{fill:'#9ca3af',fontSize:12}} axisLine={false} tickLine={false}/>
             <YAxis tick={{fill:'#6b7280',fontSize:11}} axisLine={false} tickLine={false}/>
-            <Tooltip contentStyle={{backgroundColor:'#111827',border:'1px solid #1f2937',borderRadius:8,color:'#f3f4f6'}} cursor={{fill:'rgba(255,255,255,0.04)'}}
+            <Tooltip contentStyle={{backgroundColor:'#111827',border:'1px solid #1f2937',borderRadius:8,color:'#f3f4f6',fontSize:12}} cursor={{fill:'rgba(255,255,255,0.04)'}}
+              labelStyle={{color:'#f3f4f6',fontSize:12}} itemStyle={{color:'#f3f4f6',fontSize:12}}
               labelFormatter={(_l, payload)=>{ const d=payload?.[0]?.payload as ProductionDay|undefined; return d?`${d.date.slice(5).replace('-','/')} (${d.day})`:''; }}
               formatter={(v)=>[`${Number(v).toLocaleString()} ${unit}`,'생산량']}/>
             <Bar dataKey="value" radius={[4,4,0,0]}>{last7.map((d,i)=>(<Cell key={i} fill={d.weekend?'#3b82f6':'#60a5fa'}/>))}</Bar>

@@ -17,9 +17,12 @@ import {
   ListChecks,
   Wrench,
   FileSpreadsheet,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
+import { useCollapsible } from '@/lib/useCollapsible';
 
-const APP_VERSION = 'v2.11.3';
+const APP_VERSION = 'v2.12.0';
 
 type NavItem = {
   href: string;
@@ -67,6 +70,8 @@ const sections: { title: string; items: NavItem[] }[] = [
 
 const Sidebar: React.FC = () => {
   const pathname = usePathname();
+  // 좁은 화면(모바일 가로보기 등)에서만 아이콘 막대로 접을 수 있다 — PC는 항상 펼침
+  const { isNarrow, collapsed, toggle } = useCollapsible('sidebarCollapsed');
 
   const today = new Date();
   const yyyy = today.getFullYear();
@@ -79,10 +84,47 @@ const Sidebar: React.FC = () => {
   const min = String(today.getMinutes()).padStart(2, '0');
   const ampm = today.getHours() < 12 ? '오전' : '오후';
 
+  if (collapsed) {
+    return (
+      <aside className="w-12 bg-gray-950 border-r border-gray-800 h-screen sticky top-0 py-3 flex flex-col items-center shrink-0">
+        <button onClick={toggle} title="메뉴 펼치기"
+          className="p-1.5 mb-3 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-colors">
+          <ChevronsRight className="w-4 h-4" />
+        </button>
+        <nav className="flex-1 overflow-y-auto flex flex-col items-center gap-1">
+          {sections.map((section, si) => (
+            <div key={section.title} className={`flex flex-col items-center gap-0.5 ${si > 0 ? 'pt-2 mt-1 border-t border-gray-800' : ''}`}>
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <Link key={item.href} href={item.href} title={item.label}
+                    className={`p-2 rounded-md border transition-colors ${
+                      isActive
+                        ? 'bg-blue-500/10 text-white border-blue-500/40'
+                        : 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200 border-transparent'
+                    }`}>
+                    <Icon className="w-4 h-4" />
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+      </aside>
+    );
+  }
+
   return (
     <aside className="w-56 bg-gray-950 border-r border-gray-800 h-screen sticky top-0 p-5 flex flex-col shrink-0">
       {/* 헤더 */}
-      <div className="mb-6">
+      <div className="mb-6 relative">
+        {isNarrow && (
+          <button onClick={toggle} title="메뉴 접기"
+            className="absolute -top-1 -right-2 p-1.5 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-colors">
+            <ChevronsLeft className="w-4 h-4" />
+          </button>
+        )}
         <div className="flex items-center gap-2 mb-1">
           <span className="relative flex w-2 h-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>

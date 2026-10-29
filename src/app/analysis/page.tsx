@@ -8,9 +8,10 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import {
   Activity, Calendar, Clock, Play, AlertTriangle, Pause,
   Search, Loader2, RefreshCw, CheckSquare, Square, ChevronDown, ChevronUp,
-  Download, Wifi, WifiOff,
+  Download, Wifi, WifiOff, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 import { useMachineDefs } from '@/lib/machine-defs';
+import { useCollapsible } from '@/lib/useCollapsible';
 import { useStopCodes } from '@/lib/useStopCodes';
 
 /* ── 타입 ── */
@@ -101,6 +102,8 @@ export default function AnalysisPage() {
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [groupFilter, setGroupFilter] = useState<string>('전체');
   const [searchText, setSearchText] = useState('');
+  // 좁은 화면에서 장비 목록을 접어 결과 영역을 넓힌다 — PC는 항상 펼침
+  const { isNarrow, collapsed: listCollapsed, toggle: toggleList } = useCollapsible('analysisListCollapsed');
   const [expandedMachine, setExpandedMachine] = useState<number | null>(null);
 
   // 동기화 요청 상태
@@ -497,10 +500,19 @@ export default function AnalysisPage() {
       {/* 메인 컨텐츠 */}
       <div className="flex-1 flex overflow-hidden">
         {/* 좌측: 장비 선택 목록 */}
+        {listCollapsed ? (
+        <button onClick={toggleList} title="장비 목록 펼치기"
+          className="w-10 shrink-0 border-r border-gray-800 bg-gray-950 flex flex-col items-center gap-3 pt-3 text-gray-400 hover:text-gray-200 hover:bg-gray-900/80 transition-colors">
+          <ChevronsRight className="w-4 h-4" />
+          <span className="text-[10px] font-bold text-blue-300 bg-blue-500/20 border border-blue-500/30 rounded px-1">{selectedMachines.size}</span>
+          <span className="text-[11px] [writing-mode:vertical-rl] tracking-widest">장비목록</span>
+        </button>
+        ) : (
         <div className="w-72 border-r border-gray-800 flex flex-col bg-gray-950">
           {/* 필터 */}
           <div className="p-3 border-b border-gray-800 space-y-2">
-            <div className="relative">
+            <div className="flex items-center gap-1.5">
+            <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
               <input
                 type="text"
@@ -509,6 +521,13 @@ export default function AnalysisPage() {
                 onChange={e => setSearchText(e.target.value)}
                 className="w-full bg-gray-900 border border-gray-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-gray-600 outline-none focus:border-gray-600"
               />
+            </div>
+            {isNarrow && (
+              <button onClick={toggleList} title="장비 목록 접기"
+                className="p-1.5 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-colors shrink-0">
+                <ChevronsLeft className="w-4 h-4" />
+              </button>
+            )}
             </div>
             <div className="flex gap-1 flex-wrap">
               {groups.map(g => (
@@ -594,6 +613,7 @@ export default function AnalysisPage() {
             전체 {allDefs.length}대 · 선택 {selectedMachines.size}대
           </div>
         </div>
+        )}
 
         {/* 우측: 분석 결과 */}
         <div className="flex-1 overflow-y-auto">

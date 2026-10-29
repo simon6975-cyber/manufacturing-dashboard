@@ -51,7 +51,7 @@ const statusDot: Record<DisplayStatus,string> = { RUN:'bg-emerald-400', IDLE:'bg
 // ============================================
 // 유틸
 // ============================================
-function formatElapsed(s:number) { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60; return`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
+function formatElapsed(s:number) { if(s<0) return '--:--:--'; const h=Math.floor(s/3600),m=Math.floor((s%3600)/60),sec=s%60; return`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`; }
 function formatDuration(ms:number) { const s=Math.floor(ms/1000); if(s<60)return`${s}초`; if(s<3600)return`${Math.floor(s/60)}분 ${s%60}초`; return`${Math.floor(s/3600)}시간 ${Math.floor((s%3600)/60)}분`; }
 function formatDurationSec(sec:number) { if(sec<60)return`${sec}초`; if(sec<3600)return`${Math.floor(sec/60)}분 ${sec%60}초`; return`${Math.floor(sec/3600)}시간 ${Math.floor((sec%3600)/60)}분`; }
 function kstTodayStr(): string { const kst=new Date(Date.now()+9*60*60*1000); return kst.toISOString().slice(0,10); }
@@ -232,6 +232,68 @@ const ProcessCard: React.FC<{ process:ProcessData; onSelect?:(no:number)=>void }
 // ============================================
 // 장비군 컴포넌트
 // ============================================
+// ============================================
+// 현재 상태 시작 시각 (DSPM 연결 장비)
+// ============================================
+// machines/{no}.statusChangedAt 은 DSPM getmachinestate 의 TM 인데, TM 이 비어 1970-01-01 로 들어와
+// 소요시간이 "498127:..." 처럼 나왔다. 대신 상태 변경 이력(machine_status_daily — 사내PC dspm-log-sync.js 가
+// 10분마다 DSPM 로그로 저장)에서 현재 상태가 시작된 시각을 찾는다.
+//   - 마지막 이벤트가 현재 상태와 같으면 → 그 이벤트의 시작 시각 (자정을 걸친 같은 상태는 어제와 이어 붙임)
+//   - 다르면 → 마지막 동기화 이후 상태가 바뀐 것 → 마지막 이벤트의 끝 시각
+interface StateSpan { state: string; startTimestamp: number; endTimestamp: number; }
+
+function useStateSpans(): Record<number, StateSpan[]> {
+  const [spans, setSpans] = useState<Record<number, StateSpan[]>>({});
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const today = kstTodayStr();
+      try {
+        const res = await fetch(`/api/status-daily?start=${shiftDate(today, -1)}&end=${today}`);
+        const json = await res.json();
+        if (cancelled || !json?.ok) return;
+        const byMachine: Record<number, StateSpan[]> = {};
+        for (const entry of (json.entries || []) as { machineNo: number; date: string; events?: StatusEvent[] }[]) {
+          const list = byMachine[entry.machineNo] || (byMachine[entry.machineNo] = []);
+          for (const e of entry.events || []) {
+            list.push({
+              state: e.state,
+              startTimestamp: e.startTimestamp ?? parseTimeToTimestamp(entry.date, e.startTime),
+              endTimestamp: e.endTimestamp ?? parseTimeToTimestamp(entry.date, e.endTime),
+            });
+          }
+        }
+        // 시간순 정렬 후 끊김 없이 이어지는 같은 상태(자정 분할 포함) 병합
+        for (const no of Object.keys(byMachine)) {
+          const sorted = byMachine[+no].sort((a, b) => a.startTimestamp - b.startTimestamp);
+          const merged: StateSpan[] = [];
+          for (const sp of sorted) {
+            const last = merged[merged.length - 1];
+            if (last && last.state === sp.state && sp.startTimestamp - last.endTimestamp <= 1000) last.endTimestamp = Math.max(last.endTimestamp, sp.endTimestamp);
+            else merged.push({ ...sp });
+          }
+          byMachine[+no] = merged;
+        }
+        setSpans(byMachine);
+      } catch { /* 다음 주기에 재시도 */ }
+    };
+    load();
+    const t = setInterval(load, 60000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, []);
+  return spans;
+}
+
+/** 현재 상태 시작 시각(ms). 알 수 없으면 null */
+function currentStateStart(spans: StateSpan[] | undefined, status: string, stopReason: string): number | null {
+  if (!spans || spans.length === 0) return null;
+  const key = status === 'STOP' && stopReason ? stopReason : status;
+  const last = spans[spans.length - 1];
+  return last.state === key ? last.startTimestamp : last.endTimestamp;
+}
+
+const MIN_VALID_TS = Date.UTC(2020, 0, 1); // 이보다 이른 statusChangedAt 은 TM 누락(0) 으로 본다
+
 // ============================================
 // 장비군 대기물량
 // ============================================
@@ -479,6 +541,7 @@ const ProcessFlowDiagram: React.FC = () => {
   const mountTimeRef = useRef(Date.now());
   const [firebaseStates, setFirebaseStates] = useState<Record<number,MachineState>>({});
   const { defs: machineDefs, allDefs } = useMachineDefs();
+  const stateSpans = useStateSpans();
 
   // DSPM 실시간 데이터 (dspm_live/snapshot → RUNCNT/DAYCOMCNT)
   const [dspmByMcno, setDspmByMcno] = useState<Record<number, { runCount: number; dayCompletedCount: number }>>({});
@@ -590,7 +653,13 @@ const ProcessFlowDiagram: React.FC = () => {
       const dayCompletedCount = dspmData?.dayCompletedCount || 0;
 
       if(fb){
-        const elapsed = Math.max(0,Math.floor((now-fb.statusChangedAt.getTime())/1000));
+        // 소요시간 = 현재 상태가 시작된 뒤 흐른 시간. DSPM 연결 장비는 상태 이력 기준(위 useStateSpans 주석),
+        // 수동 장비는 터미널에서 누른 statusChangedAt 기준. 둘 다 없으면 -1('--:--:--')
+        const changedAt = fb.statusChangedAt.getTime();
+        const start = defMcno != null
+          ? currentStateStart(stateSpans[def.no], fb.status, fb.stopReason) ?? (changedAt >= MIN_VALID_TS ? changedAt : null)
+          : (changedAt >= MIN_VALID_TS ? changedAt : null);
+        const elapsed = start != null ? Math.max(0,Math.floor((now-start)/1000)) : -1;
         map[def.no] = {...base, status:fb.status, stopReason:fb.stopReason, initialElapsedSeconds:elapsed, history:fb.history||[],
           queue:toDisplay(fb.status)==='IDLE'?0:base.queue, queueCount:toDisplay(fb.status)==='IDLE'?0:base.queueCount,
           inProgress:toDisplay(fb.status)==='RUN'?base.inProgress:0, jobProgress:toDisplay(fb.status)==='RUN'?base.jobProgress:0,
@@ -601,7 +670,7 @@ const ProcessFlowDiagram: React.FC = () => {
       }
     });
     return map;
-  },[firebaseStates,now,allDefs,dspmByMcno,machineDefs]);
+  },[firebaseStates,now,allDefs,dspmByMcno,machineDefs,stateSpans]);
 
   const totalMachines = allDefs.length;
 

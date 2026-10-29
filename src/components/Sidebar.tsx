@@ -19,7 +19,7 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 
-const APP_VERSION = 'v2.11.0';
+const APP_VERSION = 'v2.11.1';
 
 type NavItem = {
   href: string;

@@ -73,57 +73,37 @@ function parseTimeToTimestamp(dateStr: string, timeStr: string): number {
   return dt.getTime() + (h * 3600 + m * 60 + s) * 1000;
 }
 
-function useStatusEvents(machineNo: number, date: string, mcno?: number) {
+function useStatusEvents(machineNo: number, date: string) {
   const [events, setEvents] = useState<StatusEvent[]>([]);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
 
-    const normalizeDspmEvents = (evts: { state: string; startTime: string; endTime: string; durationSeconds: number }[]): StatusEvent[] =>
-      evts.map(e => ({
-        state: e.state,
-        startTime: e.startTime,
-        endTime: e.endTime,
-        startTimestamp: parseTimeToTimestamp(date, e.startTime),
-        endTimestamp: parseTimeToTimestamp(date, e.endTime),
-        durationSeconds: e.durationSeconds,
-      }));
-
-    const fetchDspm = async (): Promise<boolean> => {
-      if (!mcno) return false;
-      try {
-        const res = await fetch(`/api/dspm/log?mcno=${mcno}&date=${date}`);
-        const json = await res.json();
-        if (json.ok && Array.isArray(json.events) && json.events.length > 0) {
-          if (!cancelled) setEvents(normalizeDspmEvents(json.events));
-          return true;
-        }
-      } catch { /* DSPM 실패 → fallback */ }
-      return false;
-    };
-
-    const fetchFirestore = async () => {
+    // Firestore(machine_status_daily)만 읽는다 — 사내PC dspm-log-sync.js 가 10분마다 채운다.
+    // Vercel → 사내망 DSPM(/api/dspm/log)은 방화벽에 막혀 타임아웃(15초)까지 기다리기만 해서 뺐다.
+    (async () => {
       try {
         const res = await fetch(`/api/status-daily?date=${date}`);
         const data = await res.json();
         if (cancelled) return;
         const list = data?.entries || data || [];
         const machineData = (Array.isArray(list) ? list : []).find((m: { machineNo: number }) => m.machineNo === machineNo);
-        setEvents(machineData?.events || []);
+        // 옛 스크립트(v1.0) 저장분은 startTimestamp 가 없다 → 시각 문자열로 채워 최신순 정렬이 되게
+        const evts: StatusEvent[] = (machineData?.events || []).map((e: StatusEvent) => ({
+          ...e,
+          startTimestamp: e.startTimestamp ?? parseTimeToTimestamp(date, e.startTime),
+          endTimestamp: e.endTimestamp ?? parseTimeToTimestamp(date, e.endTime),
+        }));
+        setEvents(evts);
       } catch {
         if (!cancelled) setEvents([]);
       }
-    };
-
-    (async () => {
-      const dspmOk = await fetchDspm();
-      if (!dspmOk && !cancelled) await fetchFirestore();
       if (!cancelled) setLoading(false);
     })();
 
     return () => { cancelled = true; };
-  }, [machineNo, date, mcno]);
+  }, [machineNo, date]);
   return { events, loading };
 }
 const DAY_LABELS = ['화','수','목','금','토','일','월'];
@@ -253,7 +233,7 @@ const EquipmentGroupComp: React.FC<{
 const InfoRow: React.FC<{label:string;children:React.ReactNode}> = ({label,children}) => (
   <div className="flex items-center justify-between py-3.5"><span className="text-sm text-gray-400">{label}</span><span className="text-sm">{children}</span></div>
 );
-const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number;mcno?:number}> = ({process,onClose,now,mcno}) => {
+const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> = ({process,onClose,now}) => {
   const { codeMap: stopCodeNames } = useStopCodes();
   const ds = toDisplay(process.status);
   const last7 = useMemo(()=>getLast7Days(process.dailyProduction,process.no),[process]);
@@ -262,7 +242,7 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number;mcn
 
   // 상태 이력: machine_status_daily에서 가져오기 (정확한 시작/종료/소요시간)
   const [historyDate, setHistoryDate] = useState(kstTodayStr);
-  const { events, loading: eventsLoading } = useStatusEvents(process.no, historyDate, mcno);
+  const { events, loading: eventsLoading } = useStatusEvents(process.no, historyDate);
   const isToday = historyDate === kstTodayStr();
 
   // 이벤트를 최신순으로 정렬
@@ -671,7 +651,7 @@ const ProcessFlowDiagram: React.FC = () => {
         <TotalCard label="전 공정 누적 제작완료" value={totals.completed} unit="매" color="emerald" border="border-l-emerald-400/70"/>
       </div>
 
-      {selectedNo!==null&&p[selectedNo]&&<DetailPanel process={p[selectedNo]} onClose={()=>setSelectedNo(null)} now={now} mcno={machineDefs[selectedNo]?.mcno}/>}
+      {selectedNo!==null&&p[selectedNo]&&<DetailPanel process={p[selectedNo]} onClose={()=>setSelectedNo(null)} now={now}/>}
     </div>
   );
 };

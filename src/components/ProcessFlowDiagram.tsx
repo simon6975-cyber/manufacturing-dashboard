@@ -106,10 +106,58 @@ function useStatusEvents(machineNo: number, date: string) {
   }, [machineNo, date]);
   return { events, loading };
 }
-const DAY_LABELS = ['화','수','목','금','토','일','월'];
-function getLast7Days(base:number,seed:number) { return DAY_LABELS.map((day,i)=>({day,value:Math.round(base*((i===4||i===5)?0.28+((seed+i)%8)/100:0.9+((seed*3+i*17)%18)/100))})); }
-function getMonthlyTotal(d:number,s:number) { return Math.round(d*20.5+s*211); }
-function getAchievementRate(m:number,t:number) { return t<=0?0:Math.round((m/(t*30))*100); }
+const WEEKDAY_KO = ['일','월','화','수','목','금','토'];
+interface ProductionDay { date: string; day: string; weekend: boolean; value: number; }
+
+// 최근 30일 생산량 — production_daily/{date}/machines/{no}.dayCompletedCount (DSPM DAYCOMCNT 일 마감값)
+// 오늘은 아직 마감 전이라 실시간 DAYCOMCNT(liveToday)와 저장값 중 큰 값을 쓴다
+function useProductionHistory(machineNo: number, liveToday: number) {
+  const today = kstTodayStr();
+  const start = shiftDate(today, -29);
+  const key = `${machineNo}|${start}|${today}`;
+  // 조회가 끝난 키와 함께 보관 — 키가 다르면 로딩 중 (effect 안에서 setLoading 동기 호출을 피한다)
+  const [result, setResult] = useState<{ key: string; byDate: Record<string, number> } | null>(null);
+  const loading = result?.key !== key;
+  const stored = useMemo(() => (loading ? {} : result!.byDate), [loading, result]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/production-daily?start=${start}&end=${today}`);
+        const json = await res.json();
+        if (cancelled) return;
+        const byDate: Record<string, number> = {};
+        for (const e of (json?.entries || []) as { machineNo: number; date: string; dayCompletedCount: number }[]) {
+          if (e.machineNo === machineNo) byDate[e.date] = e.dayCompletedCount;
+        }
+        setResult({ key, byDate });
+      } catch {
+        if (!cancelled) setResult({ key, byDate: {} });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [key, machineNo, start, today]);
+
+  return useMemo(() => {
+    const days: ProductionDay[] = [];
+    for (let i = 29; i >= 0; i--) {
+      const date = shiftDate(today, -i);
+      const [y, m, d] = date.split('-').map(Number);
+      const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+      const value = date === today ? Math.max(stored[date] || 0, liveToday) : (stored[date] || 0);
+      days.push({ date, day: WEEKDAY_KO[wd], weekend: wd === 0 || wd === 6, value });
+    }
+    const total30 = days.reduce((sum, x) => sum + x.value, 0);
+    const workDays = days.filter(x => x.value > 0).length;
+    return {
+      last7: days.slice(-7),
+      total30,
+      dailyAvg: workDays > 0 ? Math.round(total30 / workDays) : 0,
+      workDays,
+      loading,
+    };
+  }, [stored, liveToday, today, loading]);
+}
 
 // 장비 초기 시뮬레이션 데이터 (Firebase에 상태가 없을 때)
 function getDefaultProcessData(def: MachineDef): Omit<ProcessData, 'name' | 'model' | 'maker'> {
@@ -236,9 +284,9 @@ const InfoRow: React.FC<{label:string;children:React.ReactNode}> = ({label,child
 const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> = ({process,onClose,now}) => {
   const { codeMap: stopCodeNames } = useStopCodes();
   const ds = toDisplay(process.status);
-  const last7 = useMemo(()=>getLast7Days(process.dailyProduction,process.no),[process]);
-  const monthly = useMemo(()=>getMonthlyTotal(process.dailyProduction,process.no),[process]);
-  const rate = getAchievementRate(monthly,process.dailyTarget);
+  const { last7, total30, dailyAvg, workDays, loading: prodLoading } = useProductionHistory(process.no, process.dayCompletedCount);
+  const unit = getCountUnit(process.equipmentGroup);
+  const has7 = last7.some(d => d.value > 0);
 
   // 상태 이력: machine_status_daily에서 가져오기 (정확한 시작/종료/소요시간)
   const [historyDate, setHistoryDate] = useState(kstTodayStr);
@@ -344,18 +392,26 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
 
       <div className="px-5 pt-5 pb-2">
         <h3 className="text-sm font-bold text-gray-200 mb-3">최근 7일 생산량</h3>
+        {prodLoading ? (
+          <p className="text-sm text-gray-600 text-center py-16">로딩 중...</p>
+        ) : !has7 ? (
+          <p className="text-sm text-gray-600 text-center py-16">최근 7일 생산 기록 없음</p>
+        ) : (
         <ResponsiveContainer width="100%" height={210}>
           <BarChart data={last7} margin={{top:5,right:5,bottom:0,left:-12}}>
             <XAxis dataKey="day" tick={{fill:'#9ca3af',fontSize:12}} axisLine={false} tickLine={false}/>
             <YAxis tick={{fill:'#6b7280',fontSize:11}} axisLine={false} tickLine={false}/>
-            <Tooltip contentStyle={{backgroundColor:'#111827',border:'1px solid #1f2937',borderRadius:8,color:'#f3f4f6'}} cursor={{fill:'rgba(255,255,255,0.04)'}} formatter={(v:number)=>[`${v.toLocaleString()}매`,'생산량']}/>
-            <Bar dataKey="value" radius={[4,4,0,0]}>{last7.map((d,i)=>(<Cell key={i} fill={(i===4||i===5)?'#3b82f6':'#60a5fa'}/>))}</Bar>
+            <Tooltip contentStyle={{backgroundColor:'#111827',border:'1px solid #1f2937',borderRadius:8,color:'#f3f4f6'}} cursor={{fill:'rgba(255,255,255,0.04)'}}
+              labelFormatter={(_l, payload)=>{ const d=payload?.[0]?.payload as ProductionDay|undefined; return d?`${d.date.slice(5).replace('-','/')} (${d.day})`:''; }}
+              formatter={(v)=>[`${Number(v).toLocaleString()} ${unit}`,'생산량']}/>
+            <Bar dataKey="value" radius={[4,4,0,0]}>{last7.map((d,i)=>(<Cell key={i} fill={d.weekend?'#3b82f6':'#60a5fa'}/>))}</Bar>
           </BarChart>
         </ResponsiveContainer>
+        )}
       </div>
       <div className="px-5 pb-6 pt-2 grid grid-cols-2 gap-3">
-        <div className="bg-gray-900 rounded-lg p-4 border border-gray-800"><p className="text-xs text-gray-500 mb-1">최근 30일 누적</p><p className="text-2xl font-bold text-gray-100">{monthly.toLocaleString()}</p></div>
-        <div className="bg-gray-900 rounded-lg p-4 border border-gray-800"><p className="text-xs text-gray-500 mb-1">목표 달성률</p><p className={`text-2xl font-bold ${rate>=100?'text-emerald-300':rate>=80?'text-gray-100':'text-amber-300'}`}>{rate}%</p></div>
+        <div className="bg-gray-900 rounded-lg p-4 border border-gray-800"><p className="text-xs text-gray-500 mb-1">최근 30일 누적</p><p className="text-2xl font-bold text-gray-100">{prodLoading?'-':total30.toLocaleString()}</p><p className="text-[11px] text-gray-600 mt-1">{unit}</p></div>
+        <div className="bg-gray-900 rounded-lg p-4 border border-gray-800"><p className="text-xs text-gray-500 mb-1">가동일 평균</p><p className="text-2xl font-bold text-gray-100">{prodLoading?'-':dailyAvg.toLocaleString()}</p><p className="text-[11px] text-gray-600 mt-1">{unit} · 생산 {workDays}일 기준</p></div>
       </div>
     </div>
   </>);

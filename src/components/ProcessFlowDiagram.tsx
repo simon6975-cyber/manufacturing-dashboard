@@ -309,11 +309,11 @@ const MIN_VALID_TS = Date.UTC(2020, 0, 1); // 이보다 이른 statusChangedAt �
 interface GroupQueue { queue: number | null; unit: string; }
 interface ProcCount { PROCCD: string; PROCNM: string; UNIT: string; TOT: number; CNT: number; REMAIN: number; }
 const REAL_QUEUE_PROCESSES = ['내지', '표지'];
-// 장비군 이름 → getproccnt 공정코드 (prev 가 없으면 REMAIN 사용, unit 이 있으면 API UNIT 대신 표시)
-const PROC_QUEUE_RULES: Record<string, { code: string; prev?: string; unit?: string }> = {
+// 장비군 이름 → getproccnt 공정코드 (prev 가 없으면 REMAIN 사용)
+const PROC_QUEUE_RULES: Record<string, { code: string; prev?: string }> = {
   '연속지출력기': { code: '02' },             // 내지
   '롤재단':       { code: '06', prev: '02' }, // 컷팅 ← 내지
-  '낱장출력':     { code: '01', unit: '페이지' }, // 표지 — API UNIT 은 '장'이지만 현장 표기는 페이지
+  '낱장출력':     { code: '01' },             // 표지
   '코팅':         { code: '14', prev: '01' }, // 코팅 ← 표지
   '에폭시':       { code: '15', prev: '14' }, // 에폭시 ← 코팅
 };
@@ -330,7 +330,7 @@ function computeGroupQueues(groupsByProcess: Record<string, DynamicEquipmentGrou
         const rule = PROC_QUEUE_RULES[g.name.replace(/\s+/g, '')];
         const cur = rule ? procByCode.get(rule.code) : undefined;
         if (!rule || !cur) { result[g.id] = { queue: null, unit }; return; }
-        if (!rule.prev) { result[g.id] = { queue: cur.REMAIN, unit: rule.unit || cur.UNIT || unit }; return; }
+        if (!rule.prev) { result[g.id] = { queue: cur.REMAIN, unit: cur.UNIT || unit }; return; }
         const prev = procByCode.get(rule.prev);
         if (!prev) { result[g.id] = { queue: null, unit: cur.UNIT || unit }; return; }
         const factor = prev.UNIT === '페이지' && cur.UNIT === '장' ? 0.5 : 1;

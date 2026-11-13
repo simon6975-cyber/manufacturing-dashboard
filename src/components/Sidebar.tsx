@@ -19,10 +19,13 @@ import {
   FileSpreadsheet,
   ChevronsLeft,
   ChevronsRight,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { useCollapsible } from '@/lib/useCollapsible';
+import { useTheme } from '@/lib/useTheme';
 
-const APP_VERSION = 'v2.14.3';
+const APP_VERSION = 'v2.15.0';
 
 type NavItem = {
   href: string;
@@ -72,6 +75,9 @@ const Sidebar: React.FC = () => {
   const pathname = usePathname();
   // 좁은 화면(모바일 가로보기 등)에서만 아이콘 막대로 접을 수 있다 — PC는 항상 펼침
   const { isNarrow, collapsed, toggle } = useCollapsible('sidebarCollapsed');
+  const { theme, toggle: toggleTheme } = useTheme();
+  const ThemeIcon = theme === 'light' ? Moon : Sun;
+  const themeTitle = theme === 'light' ? '블랙 배경으로' : '화이트 배경으로';
 
   const today = new Date();
   const yyyy = today.getFullYear();
@@ -90,6 +96,10 @@ const Sidebar: React.FC = () => {
         <button onClick={toggle} title="메뉴 펼치기"
           className="p-1.5 mb-3 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-colors">
           <ChevronsRight className="w-4 h-4" />
+        </button>
+        <button onClick={toggleTheme} title={themeTitle}
+          className="p-1.5 mb-3 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-colors">
+          <ThemeIcon className="w-4 h-4" />
         </button>
         <nav className="flex-1 overflow-y-auto flex flex-col items-center gap-1">
           {sections.map((section, si) => (
@@ -134,6 +144,10 @@ const Sidebar: React.FC = () => {
         </div>
         <div className="flex items-center gap-2 px-4">
           <span className="text-[10px] text-gray-600 font-mono">{APP_VERSION}</span>
+          <button onClick={toggleTheme} title={themeTitle}
+            className="ml-auto flex items-center gap-1 px-1.5 py-0.5 rounded border border-gray-800 text-[10px] text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-colors">
+            <ThemeIcon className="w-3 h-3" />{theme === 'light' ? '블랙' : '화이트'}
+          </button>
         </div>
         <p className="text-[11px] text-gray-500 tracking-wider font-mono mt-1">
           {yyyy}.{mm}.{dd} · {dayStr}

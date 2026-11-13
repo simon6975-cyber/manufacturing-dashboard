@@ -306,10 +306,10 @@ const MIN_VALID_TS = Date.UTC(2020, 0, 1); // 이보다 이른 statusChangedAt �
 //   - 매핑 공정이 없는 장비군(낱장재단)은 null('-')
 //   - getproccnt 가 아직 없으면(사내PC 스크립트 v1.2 미만) 장비별 금일완료(DAYCOMCNT) 차이로 대신 계산
 //   - 단위는 getproccnt UNIT(페이지/장/부) — 없으면 장비군 이름 기준(getCountUnit)
-// 제본·포장: 아직 실데이터 미연결 — 기존 시뮬레이션 값 유지
+// 제본·포장: 모든 장비군이 그 공정의 REMAIN (getproccnt 가 아직 없으면 '-')
 interface GroupQueue { queue: number | null; unit: string; }
 interface ProcCount { PROCCD: string; PROCNM: string; UNIT: string; TOT: number; CNT: number; REMAIN: number; }
-const REAL_QUEUE_PROCESSES = ['내지', '표지'];
+const FLOW_QUEUE_PROCESSES = ['내지', '표지']; // getproccnt 없을 때 DAYCOMCNT 차이로 대신 계산하는 파트
 // 장비군 이름 → getproccnt 공정코드 (prev 가 없으면 REMAIN 사용)
 const PROC_QUEUE_RULES: Record<string, { code: string; prev?: string }> = {
   '연속지출력기': { code: '02' },             // 내지
@@ -317,6 +317,11 @@ const PROC_QUEUE_RULES: Record<string, { code: string; prev?: string }> = {
   '낱장출력':     { code: '01' },             // 표지
   '코팅':         { code: '14', prev: '01' }, // 코팅 ← 표지
   '에폭시':       { code: '15', prev: '14' }, // 에폭시 ← 코팅
+  '제본':         { code: '10' },             // 제본
+  '중철기':       { code: '08' },             // 중철
+  '날개접지기':   { code: '18' },             // 날개접지
+  '시험지접지기': { code: '05' },             // 모의고사 (시험지 접지)
+  '포장':         { code: '12' },             // 발송
 };
 
 function computeGroupQueues(groupsByProcess: Record<string, DynamicEquipmentGroup[]>, machineMap: Record<number, ProcessData>, proccnt: ProcCount[] | null): Record<string, GroupQueue> {
@@ -327,7 +332,7 @@ function computeGroupQueues(groupsByProcess: Record<string, DynamicEquipmentGrou
   for (const [processGroup, groups] of Object.entries(groupsByProcess)) {
     groups.forEach((g, i) => {
       const unit = getCountUnit(g.name);
-      if (REAL_QUEUE_PROCESSES.includes(processGroup) && proccnt) {
+      if (proccnt) {
         const rule = PROC_QUEUE_RULES[g.name.replace(/\s+/g, '')];
         const cur = rule ? procByCode.get(rule.code) : undefined;
         if (!rule || !cur) { result[g.id] = { queue: null, unit }; return; }
@@ -337,14 +342,13 @@ function computeGroupQueues(groupsByProcess: Record<string, DynamicEquipmentGrou
         const factor = prev.UNIT === '페이지' && cur.UNIT === '장' ? 0.5 : 1;
         const queue = Math.min(Math.max(0, Math.round(prev.CNT * factor) - cur.CNT), cur.REMAIN);
         result[g.id] = { queue, unit: cur.UNIT || unit };
-      } else if (REAL_QUEUE_PROCESSES.includes(processGroup)) {
+      } else if (FLOW_QUEUE_PROCESSES.includes(processGroup)) {
         if (i === 0) { result[g.id] = { queue: 0, unit }; return; }
         const prev = groups[i - 1];
         const factor = getCountUnit(prev.name) === '페이지' && getCountUnit(g.name) === '장' ? 0.5 : 1;
         result[g.id] = { queue: Math.max(0, Math.round(completedOf(prev) * factor) - completedOf(g)), unit };
       } else {
-        const active = machinesOf(g).filter(m => toDisplay(m.status) !== 'IDLE');
-        result[g.id] = { queue: active.reduce((sum, m) => sum + m.queue, 0), unit };
+        result[g.id] = { queue: null, unit };
       }
     });
   }

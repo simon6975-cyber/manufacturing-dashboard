@@ -7,7 +7,7 @@ import { Save, Loader2 } from 'lucide-react';
 import { EQUIPMENT_GROUPS, useQueueLimits, saveQueueLimits, groupKey, queueUnit, QueueLimits } from '@/lib/queue-limits';
 
 export default function QueueLimitSettings() {
-  const { limits, loading } = useQueueLimits();
+  const { limits, loading, error } = useQueueLimits();
   // 사용자가 고친 칸만 보관 — 나머지는 Firestore 값을 그대로 보여준다
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -54,6 +54,9 @@ export default function QueueLimitSettings() {
         </button>
       </div>
       <div className="p-4">
+        {error && (
+          <p className="text-xs text-amber-400 mb-2">⚠ 저장된 최대치를 불러오지 못했습니다: {error}</p>
+        )}
         {loading ? (
           <p className="text-sm text-gray-500 flex items-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin" />불러오는 중...</p>
         ) : (

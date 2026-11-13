@@ -1,10 +1,9 @@
 // src/lib/queue-limits.ts
 // 장비군별 대기물량 최대치 — Firestore settings/queue_limits { limits: { 장비군명: 숫자 } }
 // 장비 관리 화면에서 입력, 공정흐름도에서 장비군 대기물량이 이 값 이상이면 '초과' 경고
+// 보안 규칙상 브라우저가 settings/* 를 직접 못 써서 /api/queue-limits (Admin SDK) 를 거친다
 'use client';
 
-import { db } from './firebase';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import { getCountUnit } from './count-unit';
 
@@ -23,36 +22,49 @@ export function queueUnit(name: string): string {
 
 export type QueueLimits = Record<string, number>;
 
-const ref = () => doc(db, 'settings', 'queue_limits');
+const CHANGE_EVENT = 'queue-limits-change';
+const REFRESH_MS = 60000; // 다른 PC 에서 바꾼 값도 1분 안에 반영
 
 /** 장비군 이름을 비교용으로 정규화 (공백 제거) */
 export function groupKey(name: string): string {
   return name.replace(/\s+/g, '');
 }
 
-export function useQueueLimits(): { limits: QueueLimits; loading: boolean } {
+export function useQueueLimits(): { limits: QueueLimits; loading: boolean; error: string | null } {
   const [limits, setLimits] = useState<QueueLimits>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    const unsub = onSnapshot(ref(), (snap) => {
-      const raw = (snap.exists() ? snap.data().limits : null) || {};
-      const clean: QueueLimits = {};
-      for (const [k, v] of Object.entries(raw)) {
-        if (typeof v === 'number' && v > 0) clean[groupKey(k)] = v;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch('/api/queue-limits', { cache: 'no-store' });
+        const json = await res.json();
+        if (cancelled) return;
+        if (!json?.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+        setLimits(json.limits || {});
+        setError(null);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       }
-      setLimits(clean);
-      setLoading(false);
-    }, () => setLoading(false));
-    return unsub;
+      if (!cancelled) setLoading(false);
+    };
+    load();
+    const t = setInterval(load, REFRESH_MS);
+    window.addEventListener(CHANGE_EVENT, load);
+    return () => { cancelled = true; clearInterval(t); window.removeEventListener(CHANGE_EVENT, load); };
   }, []);
-  return { limits, loading };
+  return { limits, loading, error };
 }
 
 /** 빈 값·0 은 저장하지 않는다(= 최대치 없음, 초과 경고 안 함) */
 export async function saveQueueLimits(limits: QueueLimits): Promise<void> {
-  const clean: QueueLimits = {};
-  for (const [k, v] of Object.entries(limits)) {
-    if (Number.isFinite(v) && v > 0) clean[groupKey(k)] = Math.round(v);
-  }
-  await setDoc(ref(), { limits: clean, updatedAt: new Date().toISOString() });
+  const res = await fetch('/api/queue-limits', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ limits }),
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json?.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+  window.dispatchEvent(new Event(CHANGE_EVENT));
 }

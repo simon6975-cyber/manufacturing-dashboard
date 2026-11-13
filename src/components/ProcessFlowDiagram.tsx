@@ -304,9 +304,9 @@ const MIN_VALID_TS = Date.UTC(2020, 0, 1); // 이보다 이른 statusChangedAt �
 //   - 페이지 → 장 으로 넘어갈 때는 양면 기준 ÷2 (내지 → 컷팅)
 //   - 매핑 공정이 없는 장비군(낱장재단)은 null('-')
 //   - getproccnt 가 아직 없으면(사내PC 스크립트 v1.2 미만) 장비별 금일완료(DAYCOMCNT) 차이로 대신 계산
-//   - 건수는 DSPM에 작업 건수 데이터가 없어 null('-') — 출처 정해지면 연결
+//   - 단위는 getproccnt UNIT(페이지/장/부) — 없으면 장비군 이름 기준(getCountUnit)
 // 제본·포장: 아직 실데이터 미연결 — 기존 시뮬레이션 값 유지
-interface GroupQueue { queue: number | null; count: number | null; }
+interface GroupQueue { queue: number | null; unit: string; }
 interface ProcCount { PROCCD: string; PROCNM: string; UNIT: string; TOT: number; CNT: number; REMAIN: number; }
 const REAL_QUEUE_PROCESSES = ['내지', '표지'];
 // 장비군 이름 → getproccnt 공정코드 (prev 가 없으면 REMAIN 사용)
@@ -325,27 +325,25 @@ function computeGroupQueues(groupsByProcess: Record<string, DynamicEquipmentGrou
   const result: Record<string, GroupQueue> = {};
   for (const [processGroup, groups] of Object.entries(groupsByProcess)) {
     groups.forEach((g, i) => {
+      const unit = getCountUnit(g.name);
       if (REAL_QUEUE_PROCESSES.includes(processGroup) && proccnt) {
         const rule = PROC_QUEUE_RULES[g.name.replace(/\s+/g, '')];
         const cur = rule ? procByCode.get(rule.code) : undefined;
-        if (!rule || !cur) { result[g.id] = { queue: null, count: null }; return; }
-        if (!rule.prev) { result[g.id] = { queue: cur.REMAIN, count: null }; return; }
+        if (!rule || !cur) { result[g.id] = { queue: null, unit }; return; }
+        if (!rule.prev) { result[g.id] = { queue: cur.REMAIN, unit: cur.UNIT || unit }; return; }
         const prev = procByCode.get(rule.prev);
-        if (!prev) { result[g.id] = { queue: null, count: null }; return; }
+        if (!prev) { result[g.id] = { queue: null, unit: cur.UNIT || unit }; return; }
         const factor = prev.UNIT === '페이지' && cur.UNIT === '장' ? 0.5 : 1;
         const queue = Math.min(Math.max(0, Math.round(prev.CNT * factor) - cur.CNT), cur.REMAIN);
-        result[g.id] = { queue, count: null };
+        result[g.id] = { queue, unit: cur.UNIT || unit };
       } else if (REAL_QUEUE_PROCESSES.includes(processGroup)) {
-        if (i === 0) { result[g.id] = { queue: 0, count: null }; return; }
+        if (i === 0) { result[g.id] = { queue: 0, unit }; return; }
         const prev = groups[i - 1];
         const factor = getCountUnit(prev.name) === '페이지' && getCountUnit(g.name) === '장' ? 0.5 : 1;
-        result[g.id] = { queue: Math.max(0, Math.round(completedOf(prev) * factor) - completedOf(g)), count: null };
+        result[g.id] = { queue: Math.max(0, Math.round(completedOf(prev) * factor) - completedOf(g)), unit };
       } else {
         const active = machinesOf(g).filter(m => toDisplay(m.status) !== 'IDLE');
-        result[g.id] = {
-          queue: active.reduce((sum, m) => sum + m.queue, 0),
-          count: active.reduce((sum, m) => sum + m.queueCount, 0),
-        };
+        result[g.id] = { queue: active.reduce((sum, m) => sum + m.queue, 0), unit };
       }
     });
   }
@@ -357,7 +355,6 @@ const EquipmentGroupComp: React.FC<{
 }> = ({ group, machineMap, onSelect, now, queueInfo }) => {
   const machines = group.machines.map(no=>machineMap[no]).filter(Boolean);
   const totalQueue = queueInfo?.queue ?? null;
-  const totalQueueCount = queueInfo?.count ?? null;
   const isOverloaded = (totalQueue ?? 0) >= DEFAULT_QUEUE_THRESHOLD;
 
   const overloadStartRef = useRef<number|null>(null);
@@ -375,8 +372,7 @@ const EquipmentGroupComp: React.FC<{
       <div className={`px-1.5 py-1 rounded-t border border-b-0 border-gray-700/50 bg-gray-900/80 ${isOverloaded?'animate-overload-box':''}`}>
         <p className="text-[10px] font-bold text-gray-300 truncate">{group.name}</p>
         <div className="flex items-center gap-2 text-[9px] mt-0.5">
-          <span className="text-amber-300">대기물량 <span className="font-bold font-mono">{totalQueue?.toLocaleString() ?? '-'}</span></span>
-          <span className="text-sky-300">건수 <span className="font-bold font-mono">{totalQueueCount ?? '-'}</span></span>
+          <span className="text-amber-300">대기물량 <span className="font-bold font-mono">{totalQueue?.toLocaleString() ?? '-'}</span>{totalQueue != null && queueInfo?.unit ? ` ${queueInfo.unit}` : ''}</span>
         </div>
         {isOverloaded && (
           <div className="flex items-center gap-1 mt-1 pt-1 border-t border-amber-500/20">
@@ -715,7 +711,7 @@ const ProcessFlowDiagram: React.FC = () => {
     return c;
   },[p]);
 
-  // 장비군별 대기물량·건수 (내지·표지는 실데이터 — computeGroupQueues 주석 참고)
+  // 장비군별 대기물량 (내지·표지는 실데이터 — computeGroupQueues 주석 참고)
   const groupQueues = useMemo(() => computeGroupQueues(groupsByProcess, p, proccnt), [groupsByProcess, p, proccnt]);
 
   // 대기물량 초과 장비군 수
@@ -724,10 +720,10 @@ const ProcessFlowDiagram: React.FC = () => {
   },[groupQueues]);
 
   const totals = useMemo(()=>{
-    let queue=0,queueCount=0,completed=0;
-    Object.values(groupQueues).forEach(q=>{ queue+=q.queue ?? 0; queueCount+=q.count ?? 0; });
+    let queue=0,completed=0;
+    Object.values(groupQueues).forEach(q=>{ queue+=q.queue ?? 0; });
     Object.values(p).forEach(proc=>{ completed+=proc.completed; });
-    return {queue,queueCount,completed};
+    return {queue,completed};
   },[p, groupQueues]);
 
   useEffect(()=>{ const h=(e:KeyboardEvent)=>{if(e.key==='Escape')setSelectedNo(null);}; window.addEventListener('keydown',h); return()=>window.removeEventListener('keydown',h); },[]);
@@ -831,9 +827,8 @@ const ProcessFlowDiagram: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <TotalCard label="총 대기 물량" value={totals.queue} color="amber" border="border-l-amber-300/70"/>
-        <TotalCard label="총 대기 건수" value={totals.queueCount} unit="건" color="sky" border="border-l-sky-400/70"/>
         <TotalCard label="전 공정 누적 제작완료" value={totals.completed} unit="매" color="emerald" border="border-l-emerald-400/70"/>
       </div>
 

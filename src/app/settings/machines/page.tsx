@@ -7,6 +7,7 @@ import { db } from '@/lib/firebase';
 import { doc, onSnapshot, collection, getDocs, deleteDoc as firestoreDeleteDoc } from 'firebase/firestore';
 import { useMachineDefs, saveMachineDefs, deleteMachineDef, DEFAULT_MACHINES, MachineDef } from '@/lib/machine-defs';
 import type { DspmMachineState } from '@/lib/machine-sync';
+import QueueLimitSettings from '@/components/QueueLimitSettings';
 
 const GROUPS = ['내지', '표지', '제본', '포장'];
 
@@ -465,6 +466,9 @@ export default function MachineSettingsPage() {
           </div>
         </>
       )}
+
+      {/* 장비군별 대기물량 최대치 */}
+      <QueueLimitSettings />
 
       {/* 실측 설비 미리보기 */}
       <div className="bg-gray-900/60 rounded-lg border border-gray-800 overflow-hidden">

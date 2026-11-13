@@ -38,6 +38,7 @@ const DEFAULT_QUEUE_THRESHOLD = 5000;
 
 import { getCountUnit } from '@/lib/count-unit';
 import { saveDailyProduction, todayKST } from '@/lib/production-daily';
+import { useQueueLimits, groupKey } from '@/lib/queue-limits';
 
 // 3가지 상태만 표시 (SETUP→IDLE 병합)
 const statusConfig: Record<DisplayStatus, { banner:string; text:string; border:string; bar:string; icon:React.ComponentType<{className?:string}>|null }> = {
@@ -351,11 +352,12 @@ function computeGroupQueues(groupsByProcess: Record<string, DynamicEquipmentGrou
 }
 
 const EquipmentGroupComp: React.FC<{
-  group: DynamicEquipmentGroup; machineMap: Record<number,ProcessData>; onSelect:(no:number)=>void; now:number; queueInfo?: GroupQueue;
-}> = ({ group, machineMap, onSelect, now, queueInfo }) => {
+  group: DynamicEquipmentGroup; machineMap: Record<number,ProcessData>; onSelect:(no:number)=>void; now:number; queueInfo?: GroupQueue; limit?: number;
+}> = ({ group, machineMap, onSelect, now, queueInfo, limit }) => {
   const machines = group.machines.map(no=>machineMap[no]).filter(Boolean);
   const totalQueue = queueInfo?.queue ?? null;
-  const isOverloaded = (totalQueue ?? 0) >= DEFAULT_QUEUE_THRESHOLD;
+  // 장비 관리에서 입력한 장비군 최대치 이상이면 초과 경고 (최대치 없으면 경고 안 함)
+  const isOverloaded = limit != null && totalQueue != null && totalQueue >= limit;
 
   const overloadStartRef = useRef<number|null>(null);
   if (isOverloaded && overloadStartRef.current === null) {
@@ -373,6 +375,7 @@ const EquipmentGroupComp: React.FC<{
         <p className="text-[10px] font-bold text-gray-300 truncate">{group.name}</p>
         <div className="flex items-center gap-2 text-[9px] mt-0.5">
           <span className="text-amber-300">대기물량 <span className="font-bold font-mono">{totalQueue?.toLocaleString() ?? '-'}</span>{totalQueue != null && queueInfo?.unit ? ` ${queueInfo.unit}` : ''}</span>
+          {limit != null && <span className="text-gray-500">/ 최대 <span className="font-mono">{limit.toLocaleString()}</span></span>}
         </div>
         {isOverloaded && (
           <div className="flex items-center gap-1 mt-1 pt-1 border-t border-amber-500/20">
@@ -562,6 +565,7 @@ const ProcessFlowDiagram: React.FC = () => {
   const [firebaseStates, setFirebaseStates] = useState<Record<number,MachineState>>({});
   const { defs: machineDefs, allDefs } = useMachineDefs();
   const stateSpans = useStateSpans();
+  const { limits: queueLimits } = useQueueLimits();
 
   // DSPM 실시간 데이터 (dspm_live/snapshot → RUNCNT/DAYCOMCNT)
   const [dspmByMcno, setDspmByMcno] = useState<Record<number, { runCount: number; dayCompletedCount: number }>>({});
@@ -716,8 +720,12 @@ const ProcessFlowDiagram: React.FC = () => {
 
   // 대기물량 초과 장비군 수
   const overloadedGroupCount = useMemo(()=>{
-    return Object.values(groupQueues).filter(q => (q.queue ?? 0) >= DEFAULT_QUEUE_THRESHOLD).length;
-  },[groupQueues]);
+    return dynamicGroups.filter(g => {
+      const limit = queueLimits[groupKey(g.name)];
+      const q = groupQueues[g.id]?.queue;
+      return limit != null && q != null && q >= limit;
+    }).length;
+  },[dynamicGroups, groupQueues, queueLimits]);
 
   const totals = useMemo(()=>{
     let queue=0,completed=0;
@@ -743,7 +751,7 @@ const ProcessFlowDiagram: React.FC = () => {
             내지 · 표지 (병렬) → 제본 → 포장 · 실시간 상태 모니터링
             {overloadedGroupCount > 0 && (
               <span className="ml-2 text-amber-400 font-medium">
-                • 대기물량 초과 {overloadedGroupCount}개 장비군 (기준 {DEFAULT_QUEUE_THRESHOLD.toLocaleString()})
+                • 대기물량 초과 {overloadedGroupCount}개 장비군 (장비 관리의 장비군별 최대치 기준)
               </span>
             )}
           </p>
@@ -774,7 +782,7 @@ const ProcessFlowDiagram: React.FC = () => {
                     {groupsByProcess['내지'].map((g, i) => (
                       <React.Fragment key={g.id}>
                         {i > 0 && <Arrow />}
-                        <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} />
+                        <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} limit={queueLimits[groupKey(g.name)]} />
                       </React.Fragment>
                     ))}
                   </div>
@@ -787,7 +795,7 @@ const ProcessFlowDiagram: React.FC = () => {
                     {groupsByProcess['표지'].map((g, i) => (
                       <React.Fragment key={g.id}>
                         {i > 0 && <Arrow />}
-                        <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} />
+                        <EquipmentGroupComp group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} limit={queueLimits[groupKey(g.name)]} />
                       </React.Fragment>
                     ))}
                   </div>
@@ -804,7 +812,7 @@ const ProcessFlowDiagram: React.FC = () => {
               <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['제본']}`}>제본</span>
               <div className="flex flex-col gap-1.5">
                 {groupsByProcess['제본'].map(g => (
-                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} />
+                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} limit={queueLimits[groupKey(g.name)]} />
                 ))}
               </div>
             </div>
@@ -818,7 +826,7 @@ const ProcessFlowDiagram: React.FC = () => {
               <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['포장']}`}>포장</span>
               <div className="flex flex-col gap-1.5">
                 {groupsByProcess['포장'].map(g => (
-                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} />
+                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} limit={queueLimits[groupKey(g.name)]} />
                 ))}
               </div>
             </div>

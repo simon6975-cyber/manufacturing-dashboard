@@ -13,7 +13,9 @@ export default function QueueLimitSettings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // 숫자만(콤마 없이) 보관하고, 화면에는 천 단위 콤마를 붙여 보여준다
   const valueOf = (name: string) => edits[name] ?? (limits[groupKey(name)]?.toString() ?? '');
+  const withCommas = (digits: string) => (digits ? Number(digits).toLocaleString('ko-KR') : '');
   const hasChanges = Object.keys(edits).length > 0;
 
   const handleSave = async () => {
@@ -21,7 +23,7 @@ export default function QueueLimitSettings() {
     try {
       const next: QueueLimits = {};
       for (const name of EQUIPMENT_GROUPS) {
-        const n = Number(valueOf(name).replace(/,/g, ''));
+        const n = Number(valueOf(name));
         if (n > 0) next[name] = n;
       }
       await saveQueueLimits(next);
@@ -63,7 +65,7 @@ export default function QueueLimitSettings() {
                   className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${changed ? 'border-blue-500/50 bg-blue-500/5' : 'border-gray-800 bg-gray-950/40'}`}>
                   <span className="text-sm text-gray-300 w-24 shrink-0">{name}</span>
                   <input type="text" inputMode="numeric" placeholder="없음"
-                    value={valueOf(name)}
+                    value={withCommas(valueOf(name))}
                     onChange={(e) => {
                       const v = e.target.value.replace(/[^\d]/g, '');
                       setEdits((prev) => ({ ...prev, [name]: v }));

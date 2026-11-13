@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useCollapsible } from '@/lib/useCollapsible';
 
-const APP_VERSION = 'v2.13.1';
+const APP_VERSION = 'v2.14.0';
 
 type NavItem = {
   href: string;

@@ -39,7 +39,9 @@ node dspm-log-sync.js
    - 진행률을 `progress` 필드에 실시간 업데이트
    - 모든 장비 완료 시 status → `completed`
 4. 대시보드가 요청 문서를 감시 → 완료 시 자동 새로고침
-5. 대기 중인 요청이 없을 때 `AUTO_SYNC_MIN`분마다 자동 동기화
+5. `PROCCNT_SEC`초(기본 60)마다 `getproccnt`(공정별 TOT/CNT/REMAIN)를 `dspm_live/proccnt`에 저장
+   — 공정흐름도 내지·표지 장비군 대기물량이 이 값을 읽는다
+6. 대기 중인 요청이 없을 때 `AUTO_SYNC_MIN`분마다 자동 동기화
    - 장비 목록은 `machine_definitions`(장비관리 화면)의 MCNO 기준
    - 오늘 날짜를 통째로 다시 저장(날짜가 바뀐 직후엔 어제 분도 마감 저장)
    - 요청이 들어오면 요청이 먼저 처리된다
@@ -52,6 +54,7 @@ node dspm-log-sync.js
 | `DSPM_BASE_URL`     | `http://dspm.dsjs.co.kr:10920`     | DSPM API URL            |
 | `POLL_INTERVAL_MS`  | `5000`                             | 폴링 간격 (ms)          |
 | `AUTO_SYNC_MIN`     | `10`                               | 자동 동기화 주기 (분), `0`이면 끔 |
+| `PROCCNT_SEC`       | `60`                               | 공정 진행량 저장 주기 (초), `0`이면 끔 |
 
 ### 주의사항
 

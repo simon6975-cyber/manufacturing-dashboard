@@ -4,6 +4,8 @@
 // 사내PC 전용 — DSPM getmachinelog API로 이력을 가져와 machine_status_daily 에 저장
 //   1) 요청 처리: Firebase dspm_sync_requests 큐(정지/병목 분석 온디맨드 조회)를 감시
 //   2) 자동 동기화: AUTO_SYNC_MIN 분마다 MCNO 매핑된 전 장비의 오늘 이력을 저장
+//   3) 공정 진행량: PROCCNT_SEC 초마다 getproccnt(공정별 TOT/CNT/REMAIN)를 dspm_live/proccnt 에 저장
+//      (공정흐름도 장비군 대기물량이 이 값을 읽는다)
 //      (공정흐름도 상세패널 '상태 변경 이력'이 이 데이터를 읽는다 — Vercel은 사내망 DSPM에 못 닿음)
 //
 // 실행방법:
@@ -15,6 +17,7 @@
 //   DSPM_BASE_URL     — DSPM API 기본 URL (기본: http://dspm.dsjs.co.kr:10920)
 //   POLL_INTERVAL_MS  — 폴링 간격 ms (기본: 5000)
 //   AUTO_SYNC_MIN     — 자동 동기화 주기 분 (기본: 10, 0이면 끔)
+//   PROCCNT_SEC       — 공정 진행량 저장 주기 초 (기본: 60, 0이면 끔)
 // ─────────────────────────────────────────────────────────────────
 
 // 모듈형 API — firebase-admin v13·v14 모두 동작 (v14는 admin.credential 등 네임스페이스 API 제거)
@@ -28,6 +31,7 @@ const SA_PATH = process.env.FIREBASE_SA_PATH || path.join(__dirname, 'serviceAcc
 const DSPM_BASE = (process.env.DSPM_BASE_URL || 'http://dspm.dsjs.co.kr:10920').replace(/\/$/, '');
 const POLL_MS = parseInt(process.env.POLL_INTERVAL_MS || '5000', 10);
 const AUTO_SYNC_MIN = parseInt(process.env.AUTO_SYNC_MIN || '10', 10);
+const PROCCNT_SEC = parseInt(process.env.PROCCNT_SEC || '60', 10);
 const MAX_EVENTS = 200;
 
 // machine_definitions 컬렉션이 비어 있을 때만 쓰는 기본 매핑 (src/lib/machine-defs.ts DEFAULT_MACHINES 와 동일)
@@ -92,8 +96,13 @@ function dateRange(from, to) {
 
 /* ── DSPM API 호출 ── */
 function fetchDspmLog(mcno, timeoutMs = 30000) {
+  return fetchDspmData(`/api/getmachinelog?mcno=${mcno}`, timeoutMs);
+}
+
+// { code, data: [...] } 응답의 data 배열을 돌려준다
+function fetchDspmData(apiPath, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
-    const url = `${DSPM_BASE}/api/getmachinelog?mcno=${mcno}`;
+    const url = `${DSPM_BASE}${apiPath}`;
     const timer = setTimeout(() => { req.destroy(); reject(new Error('timeout')); }, timeoutMs);
 
     const req = http.get(url, (res) => {
@@ -298,6 +307,36 @@ async function autoSyncOnce() {
   log(`🔄 자동 동기화 ${dates.join(',')} — ${ok}/${machines.length}대 저장${failed.length ? ` · 실패: ${failed.join(', ')}` : ''}`);
 }
 
+/* ── 공정 진행량 (getproccnt) ── */
+// 숫자 필드만 골라 저장 — 응답 원형이 바뀌어도 대시보드가 읽는 키는 고정
+let proccntBusy = false;
+let proccntFailLogged = false;
+
+async function syncProccnt() {
+  if (proccntBusy) return;
+  proccntBusy = true;
+  try {
+    const rows = await fetchDspmData('/api/getproccnt', 15000);
+    const data = rows.map((r) => ({
+      PROCCD: String(r.PROCCD ?? ''),
+      PROCNM: String(r.PROCNM ?? ''),
+      UNIT: String(r.UNIT ?? ''),
+      TOT: Number(r.TOT) || 0,
+      CNT: Number(r.CNT) || 0,
+      REMAIN: Number(r.REMAIN) || 0,
+    }));
+    await db.doc('dspm_live/proccnt').set({ data, fetchedAt: FieldValue.serverTimestamp() });
+    if (proccntFailLogged) log('✅ 공정 진행량 저장 재개');
+    proccntFailLogged = false;
+  } catch (err) {
+    // 1분마다 같은 오류로 로그가 차지 않게 연속 실패는 첫 번만 기록
+    if (!proccntFailLogged) log(`⚠️  공정 진행량(getproccnt) 실패: ${err.message}`);
+    proccntFailLogged = true;
+  } finally {
+    proccntBusy = false;
+  }
+}
+
 /* ── 폴링 루프 ── */
 // 요청 처리와 자동 동기화가 겹치지 않게 하나의 플래그로 직렬화
 let isProcessing = false;
@@ -342,11 +381,12 @@ async function pollOnce() {
 async function main() {
   console.log('');
   console.log('╔═══════════════════════════════════════════════════════╗');
-  console.log('║     DSPM Log Sync — 사내PC 동기화 스크립트 v1.1     ║');
+  console.log('║     DSPM Log Sync — 사내PC 동기화 스크립트 v1.2     ║');
   console.log('╠═══════════════════════════════════════════════════════╣');
   console.log(`║ DSPM API: ${DSPM_BASE.padEnd(42)}║`);
   console.log(`║ 폴링간격: ${String(POLL_MS).padEnd(42)}ms ║`);
   console.log(`║ 자동동기화: ${(AUTO_SYNC_MIN > 0 ? `${AUTO_SYNC_MIN}분마다 (오늘 이력)` : '끔').padEnd(38)}║`);
+  console.log(`║ 공정진행량: ${(PROCCNT_SEC > 0 ? `${PROCCNT_SEC}초마다 (getproccnt)` : '끔').padEnd(38)}║`);
   console.log('╚═══════════════════════════════════════════════════════╝');
   console.log('');
 
@@ -375,6 +415,11 @@ async function main() {
 
   // 폴링 시작 (자동 동기화는 시작 직후 1회 + AUTO_SYNC_MIN 분마다)
   if (AUTO_SYNC_MIN > 0) setInterval(() => { autoSyncDue = true; }, AUTO_SYNC_MIN * 60000);
+  // 공정 진행량은 요청 처리·자동 동기화와 별개로 돈다 (문서 1개 덮어쓰기라 가볍다)
+  if (PROCCNT_SEC > 0) {
+    syncProccnt();
+    setInterval(syncProccnt, PROCCNT_SEC * 1000);
+  }
   setInterval(pollOnce, POLL_MS);
   pollOnce(); // 즉시 1회 체크
 }

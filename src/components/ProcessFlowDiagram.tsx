@@ -297,21 +297,45 @@ const MIN_VALID_TS = Date.UTC(2020, 0, 1); // 이보다 이른 statusChangedAt �
 // ============================================
 // 장비군 대기물량
 // ============================================
-// 내지·표지: 앞 공정 금일완료(DSPM DAYCOMCNT) − 이 공정 금일완료 = 대기물량 (0 미만이면 0)
-//   - 각 공정의 첫 장비군(연속지출력기·낱장출력)은 앞 공정이 없어 0 — 투입 기준은 추후 정의
-//   - 페이지 → 장 으로 넘어갈 때는 양면 기준 ÷2 (낱장출력 → 코팅)
+// 내지·표지: DSPM getproccnt(공정별 TOT·CNT·REMAIN — 사내PC dspm-log-sync.js 가 dspm_live/proccnt 에 1분마다 저장)
+//   - 각 파트 첫 장비군(연속지출력기 ← 내지, 낱장출력 ← 표지): 그 공정의 REMAIN(아직 출력 안 된 양)
+//   - 그 다음 장비군: 앞 공정 CNT − 이 공정 CNT. 단 이 공정 REMAIN 을 넘지 않게 자른다
+//     (에폭시처럼 일부 표지만 거치는 공정은 앞 공정 완료분이 전부 넘어오지 않는다)
+//   - 페이지 → 장 으로 넘어갈 때는 양면 기준 ÷2 (내지 → 컷팅)
+//   - 매핑 공정이 없는 장비군(낱장재단)은 null('-')
+//   - getproccnt 가 아직 없으면(사내PC 스크립트 v1.2 미만) 장비별 금일완료(DAYCOMCNT) 차이로 대신 계산
 //   - 건수는 DSPM에 작업 건수 데이터가 없어 null('-') — 출처 정해지면 연결
 // 제본·포장: 아직 실데이터 미연결 — 기존 시뮬레이션 값 유지
-interface GroupQueue { queue: number; count: number | null; }
+interface GroupQueue { queue: number | null; count: number | null; }
+interface ProcCount { PROCCD: string; PROCNM: string; UNIT: string; TOT: number; CNT: number; REMAIN: number; }
 const REAL_QUEUE_PROCESSES = ['내지', '표지'];
+// 장비군 이름 → getproccnt 공정코드 (prev 가 없으면 REMAIN 사용)
+const PROC_QUEUE_RULES: Record<string, { code: string; prev?: string }> = {
+  '연속지출력기': { code: '02' },             // 내지
+  '롤재단':       { code: '06', prev: '02' }, // 컷팅 ← 내지
+  '낱장출력':     { code: '01' },             // 표지
+  '코팅':         { code: '14', prev: '01' }, // 코팅 ← 표지
+  '에폭시':       { code: '15', prev: '14' }, // 에폭시 ← 코팅
+};
 
-function computeGroupQueues(groupsByProcess: Record<string, DynamicEquipmentGroup[]>, machineMap: Record<number, ProcessData>): Record<string, GroupQueue> {
+function computeGroupQueues(groupsByProcess: Record<string, DynamicEquipmentGroup[]>, machineMap: Record<number, ProcessData>, proccnt: ProcCount[] | null): Record<string, GroupQueue> {
   const machinesOf = (g: DynamicEquipmentGroup) => g.machines.map(no => machineMap[no]).filter(Boolean);
   const completedOf = (g: DynamicEquipmentGroup) => machinesOf(g).reduce((sum, m) => sum + (m.dayCompletedCount || 0), 0);
+  const procByCode = new Map((proccnt || []).map(pc => [pc.PROCCD, pc]));
   const result: Record<string, GroupQueue> = {};
   for (const [processGroup, groups] of Object.entries(groupsByProcess)) {
     groups.forEach((g, i) => {
-      if (REAL_QUEUE_PROCESSES.includes(processGroup)) {
+      if (REAL_QUEUE_PROCESSES.includes(processGroup) && proccnt) {
+        const rule = PROC_QUEUE_RULES[g.name.replace(/\s+/g, '')];
+        const cur = rule ? procByCode.get(rule.code) : undefined;
+        if (!rule || !cur) { result[g.id] = { queue: null, count: null }; return; }
+        if (!rule.prev) { result[g.id] = { queue: cur.REMAIN, count: null }; return; }
+        const prev = procByCode.get(rule.prev);
+        if (!prev) { result[g.id] = { queue: null, count: null }; return; }
+        const factor = prev.UNIT === '페이지' && cur.UNIT === '장' ? 0.5 : 1;
+        const queue = Math.min(Math.max(0, Math.round(prev.CNT * factor) - cur.CNT), cur.REMAIN);
+        result[g.id] = { queue, count: null };
+      } else if (REAL_QUEUE_PROCESSES.includes(processGroup)) {
         if (i === 0) { result[g.id] = { queue: 0, count: null }; return; }
         const prev = groups[i - 1];
         const factor = getCountUnit(prev.name) === '페이지' && getCountUnit(g.name) === '장' ? 0.5 : 1;
@@ -332,9 +356,9 @@ const EquipmentGroupComp: React.FC<{
   group: DynamicEquipmentGroup; machineMap: Record<number,ProcessData>; onSelect:(no:number)=>void; now:number; queueInfo?: GroupQueue;
 }> = ({ group, machineMap, onSelect, now, queueInfo }) => {
   const machines = group.machines.map(no=>machineMap[no]).filter(Boolean);
-  const totalQueue = queueInfo?.queue ?? 0;
+  const totalQueue = queueInfo?.queue ?? null;
   const totalQueueCount = queueInfo?.count ?? null;
-  const isOverloaded = totalQueue >= DEFAULT_QUEUE_THRESHOLD;
+  const isOverloaded = (totalQueue ?? 0) >= DEFAULT_QUEUE_THRESHOLD;
 
   const overloadStartRef = useRef<number|null>(null);
   if (isOverloaded && overloadStartRef.current === null) {
@@ -351,7 +375,7 @@ const EquipmentGroupComp: React.FC<{
       <div className={`px-1.5 py-1 rounded-t border border-b-0 border-gray-700/50 bg-gray-900/80 ${isOverloaded?'animate-overload-box':''}`}>
         <p className="text-[10px] font-bold text-gray-300 truncate">{group.name}</p>
         <div className="flex items-center gap-2 text-[9px] mt-0.5">
-          <span className="text-amber-300">대기물량 <span className="font-bold font-mono">{totalQueue.toLocaleString()}</span></span>
+          <span className="text-amber-300">대기물량 <span className="font-bold font-mono">{totalQueue?.toLocaleString() ?? '-'}</span></span>
           <span className="text-sky-300">건수 <span className="font-bold font-mono">{totalQueueCount ?? '-'}</span></span>
         </div>
         {isOverloaded && (
@@ -559,6 +583,16 @@ const ProcessFlowDiagram: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // dspm_live/proccnt 구독 — 공정별 TOT/CNT/REMAIN (장비군 대기물량, computeGroupQueues 참고)
+  const [proccnt, setProccnt] = useState<ProcCount[] | null>(null);
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'dspm_live', 'proccnt'), (snap) => {
+      const rows = snap.exists() && Array.isArray(snap.data().data) ? snap.data().data as ProcCount[] : null;
+      setProccnt(rows);
+    }, () => setProccnt(null));
+    return unsub;
+  }, []);
+
   // dspm_live/snapshot 구독 — RUNCNT/DAYCOMCNT를 MCNO 기준으로 매핑
   useEffect(() => {
     const unsub = onSnapshot(doc(db, 'dspm_live', 'snapshot'), (snap) => {
@@ -682,16 +716,16 @@ const ProcessFlowDiagram: React.FC = () => {
   },[p]);
 
   // 장비군별 대기물량·건수 (내지·표지는 실데이터 — computeGroupQueues 주석 참고)
-  const groupQueues = useMemo(() => computeGroupQueues(groupsByProcess, p), [groupsByProcess, p]);
+  const groupQueues = useMemo(() => computeGroupQueues(groupsByProcess, p, proccnt), [groupsByProcess, p, proccnt]);
 
   // 대기물량 초과 장비군 수
   const overloadedGroupCount = useMemo(()=>{
-    return Object.values(groupQueues).filter(q => q.queue >= DEFAULT_QUEUE_THRESHOLD).length;
+    return Object.values(groupQueues).filter(q => (q.queue ?? 0) >= DEFAULT_QUEUE_THRESHOLD).length;
   },[groupQueues]);
 
   const totals = useMemo(()=>{
     let queue=0,queueCount=0,completed=0;
-    Object.values(groupQueues).forEach(q=>{ queue+=q.queue; queueCount+=q.count ?? 0; });
+    Object.values(groupQueues).forEach(q=>{ queue+=q.queue ?? 0; queueCount+=q.count ?? 0; });
     Object.values(p).forEach(proc=>{ completed+=proc.completed; });
     return {queue,queueCount,completed};
   },[p, groupQueues]);

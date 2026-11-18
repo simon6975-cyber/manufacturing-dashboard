@@ -1,7 +1,7 @@
 // src/components/Sidebar.tsx
 'use client';
 
-import React from 'react';
+import React, { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -25,7 +25,7 @@ import {
 import { useCollapsible } from '@/lib/useCollapsible';
 import { useTheme } from '@/lib/useTheme';
 
-const APP_VERSION = 'v2.17.0';
+const APP_VERSION = 'v2.17.1';
 
 type NavItem = {
   href: string;
@@ -71,6 +71,15 @@ const sections: { title: string; items: NavItem[] }[] = [
   },
 ];
 
+// 현재 시각(분 단위) — 서버(UTC)와 브라우저(KST) 시각이 달라 서버 렌더에선 null 로 두고 브라우저에서만 그린다.
+// 렌더 중 new Date() 를 바로 쓰면 하이드레이션 불일치(React #418)로 화면 전체가 다시 그려지며
+// <html data-theme> 같은 문서 속성이 지워졌다.
+function subscribeMinute(cb: () => void) {
+  const t = setInterval(cb, 30000);
+  return () => clearInterval(t);
+}
+const useNowMinute = () => useSyncExternalStore(subscribeMinute, () => Math.floor(Date.now() / 60000), () => null);
+
 const Sidebar: React.FC = () => {
   const pathname = usePathname();
   // 좁은 화면(모바일 가로보기 등)에서만 아이콘 막대로 접을 수 있다 — PC는 항상 펼침
@@ -79,7 +88,8 @@ const Sidebar: React.FC = () => {
   const ThemeIcon = theme === 'light' ? Moon : Sun;
   const themeTitle = theme === 'light' ? '블랙 배경으로' : '화이트 배경으로';
 
-  const today = new Date();
+  const nowMinute = useNowMinute();
+  const today = new Date((nowMinute ?? 0) * 60000);
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
@@ -150,7 +160,7 @@ const Sidebar: React.FC = () => {
           </button>
         </div>
         <p className="text-[11px] text-gray-500 tracking-wider font-mono mt-1">
-          {yyyy}.{mm}.{dd} · {dayStr}
+          {nowMinute != null ? `${yyyy}.${mm}.${dd} · ${dayStr}` : '\u00a0'}
         </p>
       </div>
 
@@ -192,7 +202,7 @@ const Sidebar: React.FC = () => {
 
       {/* 하단 */}
       <div className="text-[10px] text-gray-600 mt-auto pt-4 border-t border-gray-800">
-        동기화: {ampm} {hh}:{min}
+        동기화: {nowMinute != null ? `${ampm} ${hh}:${min}` : '-'}
       </div>
     </aside>
   );

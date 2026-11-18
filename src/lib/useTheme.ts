@@ -1,13 +1,12 @@
 // src/lib/useTheme.ts
-// 화면 테마(블랙/화이트) — <html data-theme="light"> 로 전환, localStorage 'theme' 에 기억
+// 화면 테마(화이트 기본/블랙) — <html data-theme="light"> 로 전환, localStorage 'theme' 에 기억
 // 첫 화면 깜박임을 막으려고 초기 적용은 layout.tsx 의 인라인 스크립트(theme-init.ts)가 한다
 'use client';
 
 import { useCallback, useSyncExternalStore } from 'react';
-import { THEME_STORAGE_KEY as STORAGE_KEY } from './theme-init';
+import { THEME_STORAGE_KEY as STORAGE_KEY, THEME_CHANGE_EVENT as CHANGE_EVENT } from './theme-init';
 
 export type Theme = 'dark' | 'light';
-const CHANGE_EVENT = 'theme-change';
 
 function subscribe(cb: () => void) {
   window.addEventListener(CHANGE_EVENT, cb);
@@ -23,7 +22,7 @@ function readTheme(): Theme {
 }
 
 export function useTheme() {
-  const theme = useSyncExternalStore(subscribe, readTheme, () => 'dark' as Theme);
+  const theme = useSyncExternalStore(subscribe, readTheme, () => 'light' as Theme); // 기본 화이트
 
   const toggle = useCallback(() => {
     const next: Theme = readTheme() === 'light' ? 'dark' : 'light';

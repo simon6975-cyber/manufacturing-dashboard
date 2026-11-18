@@ -13,9 +13,9 @@ export const EQUIPMENT_GROUPS = [
   '제본', '중철기', '날개접지기', '시험지접지기', '포장',
 ] as const;
 
-// 대기물량 표시 단위 — 롤재단·낱장출력은 DSPM getproccnt 의 컷팅·표지 단위(장)를 따른다
+// 대기물량 표시 단위 — 롤재단은 DSPM getproccnt 의 컷팅 단위(장)를 따른다
 // (공정흐름도 computeGroupQueues 와 같은 단위여야 최대치 비교가 맞다)
-const QUEUE_UNIT_OVERRIDES: Record<string, string> = { '롤재단': '장', '낱장출력': '장' };
+const QUEUE_UNIT_OVERRIDES: Record<string, string> = { '롤재단': '장' };
 export function queueUnit(name: string): string {
   return QUEUE_UNIT_OVERRIDES[name.replace(/\s+/g, '')] ?? getCountUnit(name);
 }

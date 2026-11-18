@@ -558,6 +558,10 @@ const processGroupColors: Record<string, string> = {
   '포장': 'text-cyan-300',
 };
 const PROCESS_GROUP_ORDER = ['내지', '표지', '제본', '포장'];
+// 날개접지공정 박스에 들어가는 장비군 (이름은 장비 정의의 equipmentGroup, 공백 무시)
+const WING_GROUP = '날개접지기';
+const TWO_SIDE_GROUP = '2면재단';
+const SHEET_CUT_GROUP = '낱장재단';
 
 // ============================================
 // 메인 컴포넌트
@@ -740,11 +744,27 @@ const ProcessFlowDiagram: React.FC = () => {
 
   useEffect(()=>{ const h=(e:KeyboardEvent)=>{if(e.key==='Escape')setSelectedNo(null);}; window.addEventListener('keydown',h); return()=>window.removeEventListener('keydown',h); },[]);
 
+  // 날개접지공정 — 날개접지기 → 2면재단(주: HT300 / 대안: 낱장재단기) 흐름을 제본과 포장 사이 별도 박스로.
+  // 날개접지기가 RUN 일 때만 펼치고, 대기·정지면 접는다(접힌 상태에서 눌러 수동으로 펼칠 수 있음).
+  // 낱장재단은 표지 파트와 같은 장비라 같은 장비군을 그대로 한 번 더 그린다(상태·대기물량 동일).
+  const findGroup = (name: string) => dynamicGroups.find(g => groupKey(g.name) === name);
+  const wingGroup = findGroup(WING_GROUP);
+  const twoSideGroup = findGroup(TWO_SIDE_GROUP);
+  const sheetCutGroup = findGroup(SHEET_CUT_GROUP);
+  const wingRunning = !!wingGroup && wingGroup.machines.some(no => p[no] && toDisplay(p[no].status) === 'RUN');
+  const [wingPinned, setWingPinned] = useState(false);
+  const wingExpanded = wingRunning || wingPinned;
+  const jebonGroups = (groupsByProcess['제본'] || []).filter(g => g !== wingGroup && g !== twoSideGroup);
+
   // 레이아웃 존 boolean
   const hasNaeji = (groupsByProcess['내지'] || []).length > 0;
   const hasPyoji = (groupsByProcess['표지'] || []).length > 0;
-  const hasJebon = (groupsByProcess['제본'] || []).length > 0;
+  const hasJebon = jebonGroups.length > 0;
+  const hasWing = !!wingGroup;
   const hasPojang = (groupsByProcess['포장'] || []).length > 0;
+  const groupProps = (g: DynamicEquipmentGroup) => ({
+    group: g, machineMap: p, onSelect: setSelectedNo, now, queueInfo: groupQueues[g.id], limit: queueLimits[groupKey(g.name)],
+  });
 
   return (
     <div className="flex flex-col gap-4 p-5 bg-black min-h-full">
@@ -815,14 +835,56 @@ const ProcessFlowDiagram: React.FC = () => {
             <div className="relative rounded-lg border border-dashed border-gray-700 px-2 pt-4 pb-2 shrink-0">
               <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['제본']}`}>제본</span>
               <div className="flex flex-col gap-1.5">
-                {groupsByProcess['제본'].map(g => (
-                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} limit={queueLimits[groupKey(g.name)]} />
+                {jebonGroups.map(g => (
+                  <EquipmentGroupComp key={g.id} {...groupProps(g)} />
                 ))}
               </div>
             </div>
           )}
 
-          {hasJebon && hasPojang && <Arrow size="lg" />}
+          {hasJebon && (hasWing || hasPojang) && <Arrow size="lg" />}
+
+          {/* 날개접지공정 — 날개접지기 RUN 일 때 펼침 */}
+          {wingGroup && (wingExpanded ? (
+            <div className="relative rounded-2xl border-2 border-sky-500/40 px-2 pt-4 pb-2 shrink-0">
+              <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['제본']}`}>날개접지공정</span>
+              {!wingRunning && (
+                <button onClick={() => setWingPinned(false)} title="날개접지공정 접기"
+                  className="absolute -top-2.5 right-3 px-1.5 bg-black text-[10px] text-gray-500 hover:text-gray-300 flex items-center gap-0.5">
+                  <ChevronLeft className="w-3 h-3" />접기
+                </button>
+              )}
+              <div className="flex items-start gap-1.5">
+                <EquipmentGroupComp {...groupProps(wingGroup)} />
+                <Arrow />
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-[10px] font-bold text-gray-400 px-1">2면재단</p>
+                  {twoSideGroup ? (
+                    <EquipmentGroupComp {...groupProps(twoSideGroup)} />
+                  ) : (
+                    <div className="min-w-[170px] rounded border border-dashed border-gray-700 px-3 py-4 text-center">
+                      <p className="text-[11px] font-bold text-gray-400">HT300 (미등록)</p>
+                      <p className="text-[10px] text-gray-600 mt-1 leading-relaxed">장비 관리에서 추가<br/>장비군: {TWO_SIDE_GROUP}</p>
+                    </div>
+                  )}
+                  {sheetCutGroup && (
+                    <>
+                      <p className="text-[10px] text-gray-500 px-1 pt-1">또는 낱장재단기</p>
+                      <EquipmentGroupComp {...groupProps(sheetCutGroup)} />
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setWingPinned(true)} title="날개접지공정 펼치기"
+              className="shrink-0 self-stretch min-h-[120px] w-9 rounded-2xl border-2 border-dashed border-gray-700 hover:border-sky-500/50 flex flex-col items-center gap-2 pt-3 text-gray-500 hover:text-gray-300 transition-colors">
+              <ChevronRight className="w-3.5 h-3.5" />
+              <span className="text-[10px] font-bold [writing-mode:vertical-rl] tracking-wider">날개접지공정 · 대기</span>
+            </button>
+          ))}
+
+          {hasWing && hasPojang && <Arrow size="lg" />}
 
           {/* 포장 */}
           {hasPojang && (
@@ -830,7 +892,7 @@ const ProcessFlowDiagram: React.FC = () => {
               <span className={`absolute -top-2.5 left-3 px-2 bg-black text-[10px] font-bold tracking-wider ${processGroupColors['포장']}`}>포장</span>
               <div className="flex flex-col gap-1.5">
                 {groupsByProcess['포장'].map(g => (
-                  <EquipmentGroupComp key={g.id} group={g} machineMap={p} onSelect={setSelectedNo} now={now} queueInfo={groupQueues[g.id]} limit={queueLimits[groupKey(g.name)]} />
+                  <EquipmentGroupComp key={g.id} {...groupProps(g)} />
                 ))}
               </div>
             </div>

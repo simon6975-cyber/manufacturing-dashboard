@@ -25,7 +25,7 @@ import {
 import { useCollapsible } from '@/lib/useCollapsible';
 import { useTheme } from '@/lib/useTheme';
 
-const APP_VERSION = 'v2.19.0';
+const APP_VERSION = 'v2.19.1';
 
 type NavItem = {
   href: string;

@@ -30,6 +30,12 @@ export function formatDateKST(d: Date): string {
   return kst.toISOString().slice(0, 10);
 }
 
+// 같은 브라우저에서 장비별 마지막 저장 — dspm_live/snapshot 이 1분마다 바뀔 때마다 열린 화면 수만큼
+// 쓰기가 일어나 Firestore 일일 한도를 갉아먹었다. 값이 바뀌었고 5분이 지났을 때만 다시 쓴다.
+// (그날 마지막 값은 23:55 크론이 확정 저장)
+const SAVE_MIN_INTERVAL_MS = 5 * 60 * 1000;
+const lastSaved = new Map<string, { value: number; at: number }>();
+
 // 일일 생산량 저장 (dspm_live/snapshot에서 읽은 DAYCOMCNT를 기록)
 export async function saveDailyProduction(
   machineNo: number,
@@ -40,6 +46,11 @@ export async function saveDailyProduction(
   date?: string,
 ): Promise<void> {
   const dateStr = date || todayKST();
+  const key = `${dateStr}|${machineNo}`;
+  const prev = lastSaved.get(key);
+  const now = Date.now();
+  if (prev && (prev.value === dayCompletedCount || now - prev.at < SAVE_MIN_INTERVAL_MS)) return;
+  lastSaved.set(key, { value: dayCompletedCount, at: now });
   const ref = doc(db, 'production_daily', dateStr, 'machines', String(machineNo));
   await setDoc(ref, {
     machineNo,

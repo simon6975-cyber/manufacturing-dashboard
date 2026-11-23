@@ -23,7 +23,7 @@ export function queueUnit(name: string): string {
 export type QueueLimits = Record<string, number>;
 
 const CHANGE_EVENT = 'queue-limits-change';
-const REFRESH_MS = 60000; // 다른 PC 에서 바꾼 값도 1분 안에 반영
+const REFRESH_MS = 5 * 60000; // 다른 PC 에서 바꾼 값도 5분 안에 반영 (같은 화면 저장은 즉시)
 
 /** 장비군 이름을 비교용으로 정규화 (공백 제거) */
 export function groupKey(name: string): string {

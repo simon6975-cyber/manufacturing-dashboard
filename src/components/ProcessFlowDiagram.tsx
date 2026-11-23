@@ -279,7 +279,9 @@ function useStateSpans(): Record<number, StateSpan[]> {
       } catch { /* 다음 주기에 재시도 */ }
     };
     load();
-    const t = setInterval(load, 60000);
+    // 이력은 사내PC 가 10분마다 저장하므로 그 주기로만 다시 읽는다
+    // (1분마다 읽으면 열린 화면 하나로 하루 ~5만 건 — Firestore 무료 읽기 한도와 같은 규모)
+    const t = setInterval(load, 10 * 60000);
     return () => { cancelled = true; clearInterval(t); };
   }, []);
   return spans;

@@ -9,6 +9,7 @@ import {
 import { updateMachineStatus, subscribeMachine, MachineStatus, MachineHistoryEntry } from '@/lib/machine-service';
 import { useMachineDefs, DEFAULT_MACHINES } from '@/lib/machine-defs';
 import { useStopCodes } from '@/lib/useStopCodes';
+import { fetchApiJson, describeLoadError } from '@/lib/fetch-error';
 
 type Status = MachineStatus;
 
@@ -98,6 +99,7 @@ function parseTimeToTimestamp(dateStr: string, timeStr: string): number {
 function useStatusEvents(machineNo: number, date: string) {
   const [events, setEvents] = useState<StatusEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -106,8 +108,7 @@ function useStatusEvents(machineNo: number, date: string) {
     // Vercel → 사내망 DSPM(/api/dspm/log)은 방화벽에 막혀 타임아웃(15초)까지 기다리기만 해서 뺐다.
     (async () => {
       try {
-        const res = await fetch(`/api/status-daily?date=${date}`);
-        const data = await res.json();
+        const data = await fetchApiJson<{ entries?: unknown }>(`/api/status-daily?date=${date}`);
         if (cancelled) return;
         const list = data?.entries || data || [];
         const machineData = (Array.isArray(list) ? list : []).find((m: { machineNo: number }) => m.machineNo === machineNo);
@@ -118,20 +119,21 @@ function useStatusEvents(machineNo: number, date: string) {
           endTimestamp: e.endTimestamp ?? parseTimeToTimestamp(date, e.endTime),
         }));
         setEvents(evts);
-      } catch {
-        if (!cancelled) setEvents([]);
+        setError(null);
+      } catch (err) {
+        if (!cancelled) { setEvents([]); setError(describeLoadError(err)); }
       }
       if (!cancelled) setLoading(false);
     })();
 
     return () => { cancelled = true; };
   }, [machineNo, date]);
-  return { events, loading };
+  return { events, loading, error };
 }
 
 function TerminalStatusHistory({ machineNo, stopCodeMap }: { machineNo: number; stopCodeMap: Record<string, string> }) {
   const [historyDate, setHistoryDate] = useState(kstTodayStr);
-  const { events, loading } = useStatusEvents(machineNo, historyDate);
+  const { events, loading, error } = useStatusEvents(machineNo, historyDate);
   const isToday = historyDate === kstTodayStr();
   const sortedEvents = useMemo(() => [...events].sort((a, b) => b.startTimestamp - a.startTimestamp), [events]);
 
@@ -172,7 +174,7 @@ function TerminalStatusHistory({ machineNo, stopCodeMap }: { machineNo: number; 
         {loading ? (
           <p className="text-sm text-gray-600 text-center py-4">로딩 중...</p>
         ) : sortedEvents.length === 0 ? (
-          <p className="text-sm text-gray-600 text-center py-4">{historyDate} 이력 없음</p>
+          <p className="text-sm text-gray-600 text-center py-4">{error ? <span className="text-amber-400">이력을 불러오지 못했습니다 · {error}</span> : `${historyDate} 이력 없음`}</p>
         ) : sortedEvents.map((ev, i) => {
           const sl = stateLabel(ev.state);
           return (

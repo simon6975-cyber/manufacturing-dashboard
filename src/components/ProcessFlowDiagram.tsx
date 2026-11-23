@@ -39,6 +39,7 @@ const DEFAULT_QUEUE_THRESHOLD = 5000;
 import { getCountUnit } from '@/lib/count-unit';
 import { saveDailyProduction, todayKST } from '@/lib/production-daily';
 import { useQueueLimits, groupKey } from '@/lib/queue-limits';
+import { fetchApiJson, describeLoadError } from '@/lib/fetch-error';
 
 // 3가지 상태만 표시 (SETUP→IDLE 병합)
 const statusConfig: Record<DisplayStatus, { banner:string; text:string; border:string; bar:string; icon:React.ComponentType<{className?:string}>|null }> = {
@@ -77,6 +78,7 @@ function parseTimeToTimestamp(dateStr: string, timeStr: string): number {
 function useStatusEvents(machineNo: number, date: string) {
   const [events, setEvents] = useState<StatusEvent[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -85,8 +87,7 @@ function useStatusEvents(machineNo: number, date: string) {
     // Vercel → 사내망 DSPM(/api/dspm/log)은 방화벽에 막혀 타임아웃(15초)까지 기다리기만 해서 뺐다.
     (async () => {
       try {
-        const res = await fetch(`/api/status-daily?date=${date}`);
-        const data = await res.json();
+        const data = await fetchApiJson<{ entries?: unknown }>(`/api/status-daily?date=${date}`);
         if (cancelled) return;
         const list = data?.entries || data || [];
         const machineData = (Array.isArray(list) ? list : []).find((m: { machineNo: number }) => m.machineNo === machineNo);
@@ -97,15 +98,16 @@ function useStatusEvents(machineNo: number, date: string) {
           endTimestamp: e.endTimestamp ?? parseTimeToTimestamp(date, e.endTime),
         }));
         setEvents(evts);
-      } catch {
-        if (!cancelled) setEvents([]);
+        setError(null);
+      } catch (err) {
+        if (!cancelled) { setEvents([]); setError(describeLoadError(err)); }
       }
       if (!cancelled) setLoading(false);
     })();
 
     return () => { cancelled = true; };
   }, [machineNo, date]);
-  return { events, loading };
+  return { events, loading, error };
 }
 const WEEKDAY_KO = ['일','월','화','수','목','금','토'];
 interface ProductionDay { date: string; day: string; weekend: boolean; value: number; }
@@ -117,23 +119,22 @@ function useProductionHistory(machineNo: number, liveToday: number) {
   const start = shiftDate(today, -29);
   const key = `${machineNo}|${start}|${today}`;
   // 조회가 끝난 키와 함께 보관 — 키가 다르면 로딩 중 (effect 안에서 setLoading 동기 호출을 피한다)
-  const [result, setResult] = useState<{ key: string; byDate: Record<string, number> } | null>(null);
+  const [result, setResult] = useState<{ key: string; byDate: Record<string, number>; error?: string } | null>(null);
   const loading = result?.key !== key;
   const stored = useMemo(() => (loading ? {} : result!.byDate), [loading, result]);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/production-daily?start=${start}&end=${today}`);
-        const json = await res.json();
+        const json = await fetchApiJson<{ entries?: unknown }>(`/api/production-daily?start=${start}&end=${today}`);
         if (cancelled) return;
         const byDate: Record<string, number> = {};
         for (const e of (json?.entries || []) as { machineNo: number; date: string; dayCompletedCount: number }[]) {
           if (e.machineNo === machineNo) byDate[e.date] = e.dayCompletedCount;
         }
         setResult({ key, byDate });
-      } catch {
-        if (!cancelled) setResult({ key, byDate: {} });
+      } catch (err) {
+        if (!cancelled) setResult({ key, byDate: {}, error: describeLoadError(err) });
       }
     })();
     return () => { cancelled = true; };
@@ -156,8 +157,9 @@ function useProductionHistory(machineNo: number, liveToday: number) {
       dailyAvg: workDays > 0 ? Math.round(total30 / workDays) : 0,
       workDays,
       loading,
+      error: loading ? undefined : result?.error,
     };
-  }, [stored, liveToday, today, loading]);
+  }, [stored, liveToday, today, loading, result]);
 }
 
 // 장비 초기 시뮬레이션 데이터 (Firebase에 상태가 없을 때)
@@ -243,16 +245,16 @@ const ProcessCard: React.FC<{ process:ProcessData; onSelect?:(no:number)=>void }
 //   - 다르면 → 마지막 동기화 이후 상태가 바뀐 것 → 마지막 이벤트의 끝 시각
 interface StateSpan { state: string; startTimestamp: number; endTimestamp: number; }
 
-function useStateSpans(): Record<number, StateSpan[]> {
+function useStateSpans(): { spans: Record<number, StateSpan[]>; error: string | null } {
   const [spans, setSpans] = useState<Record<number, StateSpan[]>>({});
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       const today = kstTodayStr();
       try {
-        const res = await fetch(`/api/status-daily?start=${shiftDate(today, -1)}&end=${today}`);
-        const json = await res.json();
-        if (cancelled || !json?.ok) return;
+        const json = await fetchApiJson<{ entries?: unknown }>(`/api/status-daily?start=${shiftDate(today, -1)}&end=${today}`);
+        if (cancelled) return;
         const byMachine: Record<number, StateSpan[]> = {};
         for (const entry of (json.entries || []) as { machineNo: number; date: string; events?: StatusEvent[] }[]) {
           const list = byMachine[entry.machineNo] || (byMachine[entry.machineNo] = []);
@@ -276,7 +278,11 @@ function useStateSpans(): Record<number, StateSpan[]> {
           byMachine[+no] = merged;
         }
         setSpans(byMachine);
-      } catch { /* 다음 주기에 재시도 */ }
+        setError(null);
+      } catch (err) {
+        // 다음 주기에 재시도 — 그동안 화면 상단에 사유 표시
+        if (!cancelled) setError(describeLoadError(err));
+      }
     };
     load();
     // 이력은 사내PC 가 10분마다 저장하므로 그 주기로만 다시 읽는다
@@ -284,7 +290,7 @@ function useStateSpans(): Record<number, StateSpan[]> {
     const t = setInterval(load, 10 * 60000);
     return () => { cancelled = true; clearInterval(t); };
   }, []);
-  return spans;
+  return { spans, error };
 }
 
 /** 현재 상태 시작 시각(ms). 알 수 없으면 null */
@@ -409,13 +415,13 @@ const InfoRow: React.FC<{label:string;children:React.ReactNode}> = ({label,child
 const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> = ({process,onClose,now}) => {
   const { codeMap: stopCodeNames } = useStopCodes();
   const ds = toDisplay(process.status);
-  const { last7, total30, dailyAvg, workDays, loading: prodLoading } = useProductionHistory(process.no, process.dayCompletedCount);
+  const { last7, total30, dailyAvg, workDays, loading: prodLoading, error: prodError } = useProductionHistory(process.no, process.dayCompletedCount);
   const unit = getCountUnit(process.equipmentGroup);
   const has7 = last7.some(d => d.value > 0);
 
   // 상태 이력: machine_status_daily에서 가져오기 (정확한 시작/종료/소요시간)
   const [historyDate, setHistoryDate] = useState(kstTodayStr);
-  const { events, loading: eventsLoading } = useStatusEvents(process.no, historyDate);
+  const { events, loading: eventsLoading, error: eventsError } = useStatusEvents(process.no, historyDate);
   const isToday = historyDate === kstTodayStr();
 
   // 이벤트를 최신순으로 정렬
@@ -488,7 +494,7 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
         {eventsLoading ? (
           <p className="text-sm text-gray-600 text-center py-4">로딩 중...</p>
         ) : sortedEvents.length === 0 ? (
-          <p className="text-sm text-gray-600 text-center py-4">{historyDate} 이력 없음</p>
+          <p className="text-sm text-gray-600 text-center py-4">{eventsError ? <span className="text-amber-400">이력을 불러오지 못했습니다 · {eventsError}</span> : `${historyDate} 이력 없음`}</p>
         ) : (
           <div className="space-y-1 max-h-64 overflow-y-auto">
             {sortedEvents.map((ev, i) => (
@@ -519,8 +525,8 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
         <h3 className="text-sm font-bold text-gray-200 mb-3">최근 7일 생산량</h3>
         {prodLoading ? (
           <p className="text-sm text-gray-600 text-center py-16">로딩 중...</p>
-        ) : !has7 ? (
-          <p className="text-sm text-gray-600 text-center py-16">최근 7일 생산 기록 없음</p>
+        ) : prodError || !has7 ? (
+          <p className="text-sm text-gray-600 text-center py-16">{prodError ? <span className="text-amber-400">생산량을 불러오지 못했습니다 · {prodError}</span> : '최근 7일 생산 기록 없음'}</p>
         ) : (
         <ResponsiveContainer width="100%" height={210}>
           <BarChart data={last7} margin={{top:5,right:5,bottom:0,left:-12}}>
@@ -536,8 +542,8 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
         )}
       </div>
       <div className="px-5 pb-6 pt-2 grid grid-cols-2 gap-3">
-        <div className="bg-gray-900 rounded-lg p-4 border border-gray-800"><p className="text-xs text-gray-500 mb-1">최근 30일 누적</p><p className="text-2xl font-bold text-gray-100">{prodLoading?'-':total30.toLocaleString()}</p><p className="text-[11px] text-gray-600 mt-1">{unit}</p></div>
-        <div className="bg-gray-900 rounded-lg p-4 border border-gray-800"><p className="text-xs text-gray-500 mb-1">가동일 평균</p><p className="text-2xl font-bold text-gray-100">{prodLoading?'-':dailyAvg.toLocaleString()}</p><p className="text-[11px] text-gray-600 mt-1">{unit} · 생산 {workDays}일 기준</p></div>
+        <div className="bg-gray-900 rounded-lg p-4 border border-gray-800"><p className="text-xs text-gray-500 mb-1">최근 30일 누적</p><p className="text-2xl font-bold text-gray-100">{prodLoading||prodError?'-':total30.toLocaleString()}</p><p className="text-[11px] text-gray-600 mt-1">{unit}</p></div>
+        <div className="bg-gray-900 rounded-lg p-4 border border-gray-800"><p className="text-xs text-gray-500 mb-1">가동일 평균</p><p className="text-2xl font-bold text-gray-100">{prodLoading||prodError?'-':dailyAvg.toLocaleString()}</p><p className="text-[11px] text-gray-600 mt-1">{unit} · 생산 {workDays}일 기준</p></div>
       </div>
     </div>
   </>);
@@ -574,7 +580,7 @@ const ProcessFlowDiagram: React.FC = () => {
   const mountTimeRef = useRef(Date.now());
   const [firebaseStates, setFirebaseStates] = useState<Record<number,MachineState>>({});
   const { defs: machineDefs, allDefs } = useMachineDefs();
-  const stateSpans = useStateSpans();
+  const { spans: stateSpans, error: stateSpansError } = useStateSpans();
   const { limits: queueLimits } = useQueueLimits();
 
   // DSPM 실시간 데이터 (dspm_live/snapshot → RUNCNT/DAYCOMCNT)
@@ -787,6 +793,13 @@ const ProcessFlowDiagram: React.FC = () => {
           <button className="flex items-center gap-1.5 px-2.5 py-1 ml-1 rounded bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition-colors text-[11px]"><RefreshCw className="w-3 h-3"/>새로고침</button>
         </div>
       </div>
+
+      {stateSpansError && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          상태 이력을 불러오지 못해 소요시간·상태 변경 이력이 표시되지 않을 수 있습니다 · {stateSpansError}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <StatusCount icon={Play} label="가동 중" count={statusCounts.RUN} total={totalMachines} color="emerald"/>

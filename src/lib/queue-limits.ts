@@ -36,9 +36,10 @@ export function useQueueLimits(): { limits: QueueLimits; loading: boolean; error
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
+    const load = async (e?: Event) => {
       try {
-        const res = await fetch('/api/queue-limits', { cache: 'no-store' });
+        // 저장 직후(CHANGE_EVENT)에는 서버 캐시를 건너뛰고 새로 읽는다
+        const res = await fetch(`/api/queue-limits${e?.type === CHANGE_EVENT ? '?fresh=1' : ''}`, { cache: 'no-store' });
         const json = await res.json();
         if (cancelled) return;
         if (!json?.ok) throw new Error(json?.error || `HTTP ${res.status}`);
@@ -50,7 +51,7 @@ export function useQueueLimits(): { limits: QueueLimits; loading: boolean; error
       if (!cancelled) setLoading(false);
     };
     load();
-    const t = setInterval(load, REFRESH_MS);
+    const t = setInterval(() => load(), REFRESH_MS);
     window.addEventListener(CHANGE_EVENT, load);
     return () => { cancelled = true; clearInterval(t); window.removeEventListener(CHANGE_EVENT, load); };
   }, []);

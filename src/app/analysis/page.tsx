@@ -187,8 +187,9 @@ export default function AnalysisPage() {
   }, []);
 
   // Firebase에서 데이터 조회
-  const fetchFirebaseData = useCallback(async (signal: AbortSignal) => {
-    const url = `/api/status-daily?start=${dateFrom}&end=${dateTo}`;
+  // fresh: 서버 캐시를 건너뜀 — 사내PC 동기화가 방금 저장한 데이터를 바로 보여줄 때
+  const fetchFirebaseData = useCallback(async (signal: AbortSignal, fresh = false) => {
+    const url = `/api/status-daily?start=${dateFrom}&end=${dateTo}${fresh ? '&fresh=1' : ''}`;
     const res = await fetch(url, { signal });
     const json = await res.json();
     if (!res.ok || !json.ok) {
@@ -374,7 +375,7 @@ export default function AnalysisPage() {
             setTimeout(async () => {
               try {
                 const controller = new AbortController();
-                const entries = await fetchFirebaseData(controller.signal);
+                const entries = await fetchFirebaseData(controller.signal, true);
                 const machinesForResults = allDefs.filter(d => selectedMachines.has(d.no) && d.mcno != null);
                 const newResults = buildResults(entries, machinesForResults);
                 const missing = newResults.filter(r => !r.hasData).length;

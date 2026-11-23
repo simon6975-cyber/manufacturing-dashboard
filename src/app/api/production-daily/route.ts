@@ -2,6 +2,7 @@
 // 기간별 생산현황 데이터 조회 API — Admin SDK 사용 (보안 규칙 우회)
 import { NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/firebase-admin';
+import { cached, dateTtlMs, cacheHeaders } from '@/lib/server-cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,9 +46,10 @@ export async function GET(request: Request) {
       date: string;
     }> = [];
 
-    // 날짜별 병렬 조회
+    // 날짜별 병렬 조회 — 날짜 단위 서버 캐시 (server-cache.ts)
+    const fresh = url.searchParams.get('fresh') === '1';
     const results = await Promise.all(
-      dates.map(async (date) => {
+      dates.map((date) => cached(`production-daily:${date}`, dateTtlMs(date), async () => {
         const snap = await adminDb.collection(`production_daily/${date}/machines`).get();
         const entries: typeof allEntries = [];
         snap.forEach((doc) => {
@@ -62,12 +64,12 @@ export async function GET(request: Request) {
           });
         });
         return entries;
-      })
+      }, fresh))
     );
 
     results.forEach((entries) => allEntries.push(...entries));
 
-    return NextResponse.json({ ok: true, count: allEntries.length, entries: allEntries });
+    return NextResponse.json({ ok: true, count: allEntries.length, entries: allEntries }, { headers: cacheHeaders(fresh) });
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error('production-daily API error:', errMsg);

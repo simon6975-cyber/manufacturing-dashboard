@@ -58,6 +58,30 @@ function weekAgoKST(): string {
   return kst.toISOString().slice(0, 10);
 }
 
+// 상태별 빈도(회) — 이벤트를 시간순으로 이어 붙여 센다.
+// 일별 문서의 count 는 DSPM 로그 줄 수라, 자정을 걸친 같은 상태나 연속된 같은 상태 로그가 여러 번 세어진다.
+// 같은 상태가 끊김 없이(1초 이내) 이어지면 1회로 본다. 이벤트가 없으면 일별 count 를 그대로 쓴다.
+function countStateOccurrences(events: DspmEvent[]): Record<string, number> {
+  const spans = events
+    .map(e => {
+      const start = new Date(`${e.startTime.replace(' ', 'T')}+09:00`).getTime();
+      return { state: e.state, start, end: start + e.durationSeconds * 1000 };
+    })
+    .filter(sp => Number.isFinite(sp.start))
+    .sort((a, b) => a.start - b.start);
+  const counts: Record<string, number> = {};
+  let last: { state: string; end: number } | null = null;
+  for (const sp of spans) {
+    if (last && last.state === sp.state && sp.start - last.end <= 1000) {
+      last.end = Math.max(last.end, sp.end);
+      continue;
+    }
+    counts[sp.state] = (counts[sp.state] || 0) + 1;
+    last = { state: sp.state, end: sp.end };
+  }
+  return counts;
+}
+
 function formatSeconds(sec: number): string {
   if (sec <= 0) return '-';
   const h = Math.floor(sec / 3600);
@@ -216,6 +240,12 @@ export default function AnalysisPage() {
         }
       }
 
+      // 빈도는 이어 붙인 이벤트 기준으로 다시 센다 (countStateOccurrences 주석)
+      if (allEvents.length > 0) {
+        const counts = countStateOccurrences(allEvents);
+        for (const [state, accum] of Object.entries(totalStates)) accum.count = counts[state] || 0;
+      }
+
       const hasData = dayEntries.length > 0;
       return {
         machineNo: def.no,
@@ -261,6 +291,8 @@ export default function AnalysisPage() {
       setMissingMachineCount(missing);
       setProgress({ done: machines.length, total: machines.length });
       setResults(allResults);
+      // 장비 1대만 조회하면 상세(상태 집계)를 바로 펼친다
+      if (allResults.length === 1) setExpandedMachine(allResults[0].machineNo);
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') return;
       setResults(machines.map(def => ({
@@ -1012,24 +1044,55 @@ function MachineResultCard({
       {/* 확장 내용 */}
       {expanded && (
         <div className="border-t border-gray-800 p-5 space-y-5">
-          {/* 요약 수치 */}
-          <div className="grid grid-cols-4 gap-3 text-center">
-            <div>
-              <p className="text-[10px] text-gray-500">가동</p>
-              <p className="text-sm font-semibold text-emerald-400">{formatSeconds(runSec)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-gray-500">대기</p>
-              <p className="text-sm font-semibold text-amber-400">{formatSeconds(idleSec)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-gray-500">정지</p>
-              <p className="text-sm font-semibold text-rose-400">{formatSeconds(stopSec)}</p>
-            </div>
-            <div>
-              <p className="text-[10px] text-gray-500">가동률</p>
-              <p className="text-sm font-semibold text-blue-400">{opRate.toFixed(1)}%</p>
-            </div>
+          {/* 상태 집계 — 상태별 빈도·누적시간·비율, 정지는 코드별 */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-[10px] text-gray-500 border-b border-gray-800">
+                  <th className="text-left font-medium py-1.5">상태</th>
+                  <th className="text-right font-medium py-1.5">빈도</th>
+                  <th className="text-right font-medium py-1.5">누적시간</th>
+                  <th className="text-right font-medium py-1.5">비율</th>
+                  <th className="text-right font-medium py-1.5 hidden sm:table-cell">1회 평균</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { key: 'RUN', label: '가동 (RUN)', sec: runSec, count: r.states?.RUN?.count || 0, color: 'text-emerald-400' },
+                  { key: 'IDLE', label: '대기 (IDLE)', sec: idleSec, count: r.states?.IDLE?.count || 0, color: 'text-amber-400' },
+                  { key: 'STOP', label: '정지 (STOP)', sec: stopSec, count: stopRanking.reduce((a, x) => a + x.count, 0), color: 'text-rose-400' },
+                ].map(row => (
+                  <React.Fragment key={row.key}>
+                    <tr className="border-b border-gray-800/60">
+                      <td className={`py-1.5 font-semibold ${row.color}`}>{row.label}</td>
+                      <td className="py-1.5 text-right font-mono text-gray-200">{row.count.toLocaleString()}회</td>
+                      <td className="py-1.5 text-right text-gray-200">{formatSeconds(row.sec)}</td>
+                      <td className="py-1.5 text-right font-mono text-gray-400">{(row.sec / Math.max(total, 1) * 100).toFixed(1)}%</td>
+                      <td className="py-1.5 text-right text-gray-500 hidden sm:table-cell">{row.count > 0 ? formatSeconds(row.sec / row.count) : '-'}</td>
+                    </tr>
+                    {row.key === 'STOP' && stopRanking.map(item => (
+                      <tr key={item.code} className="border-b border-gray-800/40">
+                        <td className="py-1 pl-4 text-gray-400">
+                          <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded mr-1.5 ${getStateColor(item.code).bg} ${getStateColor(item.code).text}`}>{item.code}</span>
+                          {item.name !== item.code ? item.name : ''}
+                        </td>
+                        <td className="py-1 text-right font-mono text-gray-300">{item.count.toLocaleString()}회</td>
+                        <td className="py-1 text-right text-gray-300">{formatSeconds(item.seconds)}</td>
+                        <td className="py-1 text-right font-mono text-gray-500">{(item.seconds / Math.max(total, 1) * 100).toFixed(1)}%</td>
+                        <td className="py-1 text-right text-gray-600 hidden sm:table-cell">{item.count > 0 ? formatSeconds(item.seconds / item.count) : '-'}</td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                ))}
+                <tr>
+                  <td className="py-1.5 font-semibold text-gray-300">합계 · 가동률</td>
+                  <td className="py-1.5" />
+                  <td className="py-1.5 text-right text-gray-300">{formatSeconds(total)}</td>
+                  <td className="py-1.5 text-right font-mono font-semibold text-blue-400">{opRate.toFixed(1)}%</td>
+                  <td className="hidden sm:table-cell" />
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           {/* 상태 비율 바 */}

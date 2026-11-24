@@ -6,6 +6,8 @@
 //   2) 자동 동기화: AUTO_SYNC_MIN 분마다 MCNO 매핑된 전 장비의 오늘 이력을 저장
 //   3) 공정 진행량: PROCCNT_SEC 초마다 getproccnt(공정별 TOT/CNT/REMAIN)를 dspm_live/proccnt 에 저장
 //      (공정흐름도 장비군 대기물량이 이 값을 읽는다)
+//   4) 병목 판정: 같은 주기로 장비별 병목(BN1~BN5)을 계산해 dspm_live/bottlenecks 에 저장
+//      (규칙은 settings/bottleneck_rules — 대시보드 설정 > 정지/병목코드에서 수정)
 //      (공정흐름도 상세패널 '상태 변경 이력'이 이 데이터를 읽는다 — Vercel은 사내망 DSPM에 못 닿음)
 //
 // 실행방법:
@@ -294,6 +296,7 @@ async function autoSyncOnce() {
   for (const m of machines) {
     try {
       const entries = await fetchDspmLog(m.mcno);
+      latestLogs.set(m.mcno, entries); // 병목 판정(BN3~BN5)이 다음 동기화까지 재사용
       for (const dt of dates) {
         const summary = aggregateByDate(entries, dt, m.no, m.name, m.mcno);
         if (summary.events.length > 0) await saveDailySummary(summary);
@@ -326,6 +329,7 @@ async function syncProccnt() {
       REMAIN: Number(r.REMAIN) || 0,
     }));
     await db.doc('dspm_live/proccnt').set({ data, fetchedAt: FieldValue.serverTimestamp() });
+    lastProccnt = data;
     if (proccntFailLogged) log('✅ 공정 진행량 저장 재개');
     proccntFailLogged = false;
   } catch (err) {
@@ -334,6 +338,256 @@ async function syncProccnt() {
     proccntFailLogged = true;
   } finally {
     proccntBusy = false;
+  }
+  // 공정 진행량을 못 받아도 BN3~BN5 는 판정할 수 있으므로 항상 돌린다
+  await runBottleneckTick().catch((err) => log(`⚠️  병목 판정 실패: ${err.message}`));
+}
+
+/* ── 병목 판정 (BN1~BN5) ── */
+// 규칙 기본값 — 대시보드 src/lib/bottleneck-rules.ts DEFAULT_BOTTLENECK_RULES 와 같게 유지
+const DEFAULT_BN_RULES = {
+  BN1: { enabled: true, name: '대기물량병목', overloadMinutes: 30, countThreshold: 10, windowHours: 24 },
+  BN2: { enabled: true, name: '전공정병목', emptyMinutes: 60, excludePrevIdle: true },
+  BN3: { enabled: true, name: '동시성병목', stopCodes: ['S1', 'S2', 'S3'], countThreshold: 20, windowHours: 2 },
+  BN4: { enabled: true, name: '대량물량병목', runMinutes: 180 },
+  BN5: { enabled: true, name: '긴급물량병목', stopCodes: ['S6'], countThreshold: 5, windowHours: 6 },
+};
+// 장비군 → getproccnt 공정 (대시보드 ProcessFlowDiagram PROC_QUEUE_RULES 와 같게 유지)
+const GROUP_PROC = {
+  '연속지출력기': { code: '02' }, '롤재단': { code: '06', prev: '02' },
+  '낱장출력': { code: '01' }, '코팅': { code: '14', prev: '01' }, '에폭시': { code: '15', prev: '14' },
+  '제본': { code: '10' }, '중철기': { code: '08' }, '날개접지기': { code: '18' },
+  '시험지접지기': { code: '05' }, '포장': { code: '12' },
+};
+// BN2 의 '전공정' — 이 장비군으로 물량을 넘겨주는 장비군 (없으면 BN2 판정 안 함 — 각 파트 첫 공정)
+const PREV_GROUPS = {
+  '롤재단': ['연속지출력기'], '코팅': ['낱장출력'], '에폭시': ['코팅'], '낱장재단': ['에폭시'],
+  '제본': ['롤재단', '낱장재단'], '중철기': ['롤재단', '낱장재단'], '시험지접지기': ['롤재단'],
+  '날개접지기': ['제본'], '2면재단': ['날개접지기'], '포장': ['제본', '중철기', '시험지접지기', '2면재단'],
+};
+
+const groupKeyOf = (name) => String(name || '').replace(/\s+/g, '');
+
+/** 장비군 대기물량 — 대시보드 computeGroupQueues 와 같은 계산 (getproccnt 없거나 매핑 없으면 null) */
+function groupQueueOf(group, procByCode) {
+  const rule = GROUP_PROC[group];
+  const cur = rule && procByCode.get(rule.code);
+  if (!cur) return null;
+  if (!rule.prev) return cur.REMAIN;
+  const prev = procByCode.get(rule.prev);
+  if (!prev) return null;
+  const factor = prev.UNIT === '페이지' && cur.UNIT === '장' ? 0.5 : 1;
+  return Math.min(Math.max(0, Math.round(prev.CNT * factor) - cur.CNT), cur.REMAIN);
+}
+
+/** DSPM 로그 → 시간순 구간 (같은 상태가 1초 이내로 이어지면 한 구간). ENDTM 없으면 진행 중(now) */
+function logSpans(entries, now) {
+  const spans = (entries || [])
+    .map((e) => {
+      const start = new Date(e.STARTTM).getTime();
+      const endRaw = e.ENDTM ? new Date(e.ENDTM).getTime() : NaN;
+      return { state: String(e.STATE || ''), start, end: Number.isFinite(endRaw) ? endRaw : now };
+    })
+    .filter((sp) => Number.isFinite(sp.start))
+    .sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const sp of spans) {
+    const last = merged[merged.length - 1];
+    if (last && last.state === sp.state && sp.start - last.end <= 1000) last.end = Math.max(last.end, sp.end);
+    else merged.push({ ...sp });
+  }
+  return merged;
+}
+
+/** 최근 windowHours 안에 시작한 codes 상태 구간 수 */
+function countStopsInWindow(spans, codes, windowHours, now) {
+  const from = now - windowHours * 3600000;
+  return spans.filter((sp) => codes.includes(sp.state) && sp.start >= from).length;
+}
+
+/**
+ * 한 번의 판정 (순수 함수 — 상태 st 는 호출 사이에 이어지며 이 함수가 갱신한다)
+ * input: { now, rules, limits, machines:[{no,name,mcno,group}], live: Map(mcno→{STATE,match}), logs: Map(mcno→entries), proccnt }
+ * 반환: { [machineNo]: [{ code, name, since, detail }] }
+ */
+function evaluateBottlenecks(input, st) {
+  const { now, limits, machines, live, logs, proccnt } = input;
+  const rules = { ...DEFAULT_BN_RULES };
+  for (const k of Object.keys(rules)) rules[k] = { ...rules[k], ...((input.rules || {})[k] || {}) };
+  st.groups = st.groups || {};
+  st.runSince = st.runSince || {};
+  st.match = st.match || {};
+
+  const procByCode = new Map((proccnt || []).map((pc) => [pc.PROCCD, pc]));
+  const byGroup = new Map();
+  for (const m of machines) {
+    const g = groupKeyOf(m.group);
+    if (!byGroup.has(g)) byGroup.set(g, []);
+    byGroup.get(g).push(m);
+  }
+  const liveState = (m) => (m.mcno != null && live.get(m.mcno)) ? String(live.get(m.mcno).STATE || '') : '';
+
+  // 장비군 단위: BN1(대기물량 초과 지속·빈발), BN2(대기물량 0 지속)
+  const groupBn = {};
+  for (const [g, list] of byGroup) {
+    const gs = st.groups[g] || (st.groups[g] = { overSince: null, overStarts: [], emptySince: null });
+    const q = proccnt ? groupQueueOf(g, procByCode) : null;
+    const out = [];
+
+    const r1 = rules.BN1;
+    const limit = limits[g];
+    if (q != null && limit > 0 && q >= limit) {
+      if (gs.overSince == null) { gs.overSince = now; gs.overStarts.push(now); }
+    } else if (q != null) {
+      gs.overSince = null;
+    }
+    gs.overStarts = gs.overStarts.filter((t) => t >= now - r1.windowHours * 3600000);
+    if (r1.enabled) {
+      const longOver = gs.overSince != null && now - gs.overSince >= r1.overloadMinutes * 60000;
+      const frequent = gs.overStarts.length >= r1.countThreshold;
+      if (longOver || frequent) {
+        out.push({
+          code: 'BN1', name: r1.name, since: longOver ? gs.overSince : gs.overStarts[0],
+          detail: longOver
+            ? `대기물량 ${q != null ? q.toLocaleString() : '-'} ≥ 최대 ${limit != null ? limit.toLocaleString() : '-'} · ${Math.floor((now - gs.overSince) / 60000)}분 지속`
+            : `최근 ${r1.windowHours}시간 대기물량 초과 ${gs.overStarts.length}회`,
+        });
+      }
+    }
+
+    const r2 = rules.BN2;
+    const prevGroups = PREV_GROUPS[g];
+    if (q === 0 && prevGroups) {
+      const prevMachines = prevGroups.flatMap((pg) => byGroup.get(pg) || []).filter((m) => m.mcno != null);
+      const prevAllIdle = prevMachines.length > 0 && prevMachines.every((m) => liveState(m) === 'IDLE');
+      if (r2.excludePrevIdle && prevAllIdle) gs.emptySince = null;
+      else if (gs.emptySince == null) gs.emptySince = now;
+    } else if (q != null) {
+      gs.emptySince = null;
+    }
+    if (r2.enabled && gs.emptySince != null && now - gs.emptySince >= r2.emptyMinutes * 60000) {
+      out.push({ code: 'BN2', name: r2.name, since: gs.emptySince, detail: `대기물량 0 · ${Math.floor((now - gs.emptySince) / 60000)}분 지속 (전공정 가동 중)` });
+    }
+    groupBn[g] = out;
+  }
+
+  // 장비 단위: BN3·BN5(정지코드 빈도), BN4(한 작업 RUN 지속)
+  const result = {};
+  for (const m of machines) {
+    const list = [...(groupBn[groupKeyOf(m.group)] || [])];
+    if (m.mcno != null) {
+      const spans = logSpans(logs.get(m.mcno), now);
+      for (const key of ['BN3', 'BN5']) {
+        const r = rules[key];
+        if (!r.enabled) continue;
+        const n = countStopsInWindow(spans, r.stopCodes, r.windowHours, now);
+        if (n >= r.countThreshold) {
+          list.push({ code: key, name: r.name, since: now - r.windowHours * 3600000, detail: `최근 ${r.windowHours}시간 ${r.stopCodes.join('·')} ${n}회` });
+        }
+      }
+
+      // BN4 — 실시간 상태에 매칭코드가 있으면 '같은 매칭코드로 RUN' 지속, 없으면 '끊김 없는 RUN' 지속
+      const lv = live.get(m.mcno);
+      const running = lv && String(lv.STATE) === 'RUN';
+      const match = lv && lv.match ? String(lv.match) : null;
+      if (!running) {
+        delete st.runSince[m.mcno];
+        delete st.match[m.mcno];
+      } else if (match) {
+        if (!st.match[m.mcno] || st.match[m.mcno].code !== match) st.match[m.mcno] = { code: match, since: now };
+      } else if (st.runSince[m.mcno] == null) {
+        // 로그의 마지막 구간이 RUN 이면 그 시작부터, 아니면(로그 갱신 전 상태 변경) 지금부터
+        const last = spans[spans.length - 1];
+        st.runSince[m.mcno] = last && last.state === 'RUN' ? last.start : now;
+      }
+      const r4 = rules.BN4;
+      const since = match ? st.match[m.mcno]?.since : st.runSince[m.mcno];
+      if (r4.enabled && running && since != null && now - since >= r4.runMinutes * 60000) {
+        const mins = Math.floor((now - since) / 60000);
+        list.push({
+          code: 'BN4', name: r4.name, since,
+          detail: match ? `매칭코드 ${match} · ${Math.floor(mins / 60)}시간 ${mins % 60}분 RUN` : `연속 RUN ${Math.floor(mins / 60)}시간 ${mins % 60}분`,
+        });
+      }
+    }
+    if (list.length > 0) result[m.no] = list;
+  }
+  return result;
+}
+
+// 실행부 — 1분마다 (공정 진행량 저장 직후)
+const latestLogs = new Map();       // mcno → 최근 DSPM 로그 (자동 동기화가 10분마다 갱신)
+let lastProccnt = null;
+let bnState = null;                 // 판정 상태 (장비군 초과 시작 시각 등) — dspm_live/bottleneck_state 에 보관
+let bnInputs = { at: 0, rules: {}, limits: {}, machines: [] };
+let lastBnJson = '';
+let lastBnWrite = 0;
+let lastStateWrite = 0;
+const BN_INPUT_TTL_MS = 5 * 60000;  // 규칙·최대치·장비 정의는 5분마다 다시 읽음 (읽기 절약)
+
+async function loadBnInputs(now) {
+  if (now - bnInputs.at < BN_INPUT_TTL_MS) return bnInputs;
+  const [rulesSnap, limitsSnap, defsSnap] = await Promise.all([
+    db.doc('settings/bottleneck_rules').get(),
+    db.doc('settings/queue_limits').get(),
+    db.collection('machine_definitions').get(),
+  ]);
+  const machines = [];
+  defsSnap.forEach((d) => {
+    const x = d.data();
+    machines.push({
+      no: parseInt(d.id, 10),
+      name: x.name || `장비 ${d.id}`,
+      mcno: typeof x.mcno === 'number' ? x.mcno : null,
+      group: x.equipmentGroup || String(x.name || '').replace(/\s*\d+호기$/, '').replace(/\s+/g, ''),
+    });
+  });
+  const limits = {};
+  for (const [k, v] of Object.entries((limitsSnap.exists && limitsSnap.data().limits) || {})) {
+    if (typeof v === 'number' && v > 0) limits[groupKeyOf(k)] = v;
+  }
+  bnInputs = { at: now, rules: (rulesSnap.exists && rulesSnap.data().rules) || {}, limits, machines };
+  return bnInputs;
+}
+
+async function runBottleneckTick() {
+  const now = Date.now();
+  const inputs = await loadBnInputs(now);
+  if (bnState == null) {
+    const snap = await db.doc('dspm_live/bottleneck_state').get();
+    bnState = (snap.exists && snap.data().state) || {};
+  }
+
+  // 실시간 상태 (DSPM getmachinestate) — 매칭코드 필드가 있으면 BN4 에 쓴다
+  const live = new Map();
+  try {
+    const rows = await fetchDspmData('/api/getmachinestate', 15000);
+    for (const r of rows) {
+      const mcno = Number(r.MCNO);
+      if (!mcno) continue;
+      const matchKey = Object.keys(r).find((k) => /MATCH|매칭/i.test(k));
+      live.set(mcno, { STATE: r.STATE, match: matchKey ? r[matchKey] : null });
+    }
+  } catch (err) {
+    // 실시간 상태가 없으면 BN2(전공정 IDLE 판단)·BN4 는 이번 회차 건너뜀 — 로그 기반 판정은 계속
+  }
+
+  const result = evaluateBottlenecks({ now, ...inputs, live, logs: latestLogs, proccnt: lastProccnt }, bnState);
+
+  // 결과가 바뀌었을 때만 쓰고, 그대로면 10분마다 생존 신호만 (쓰기 절약)
+  const json = JSON.stringify(Object.entries(result).map(([no, l]) => [no, l.map((b) => b.code + b.detail.replace(/\d+분/g, ''))]));
+  if (json !== lastBnJson || now - lastBnWrite >= 10 * 60000) {
+    await db.doc('dspm_live/bottlenecks').set({ machines: result, updatedAt: FieldValue.serverTimestamp() });
+    if (json !== lastBnJson) {
+      const n = Object.keys(result).length;
+      log(n > 0 ? `🚧 병목 ${n}대: ${Object.entries(result).map(([no, l]) => `${no}번(${l.map((b) => b.code).join(',')})`).join(' ')}` : '✅ 병목 없음');
+    }
+    lastBnJson = json;
+    lastBnWrite = now;
+  }
+  if (now - lastStateWrite >= 5 * 60000) {
+    await db.doc('dspm_live/bottleneck_state').set({ state: bnState, updatedAt: FieldValue.serverTimestamp() });
+    lastStateWrite = now;
   }
 }
 
@@ -381,12 +635,13 @@ async function pollOnce() {
 async function main() {
   console.log('');
   console.log('╔═══════════════════════════════════════════════════════╗');
-  console.log('║     DSPM Log Sync — 사내PC 동기화 스크립트 v1.2     ║');
+  console.log('║     DSPM Log Sync — 사내PC 동기화 스크립트 v1.3     ║');
   console.log('╠═══════════════════════════════════════════════════════╣');
   console.log(`║ DSPM API: ${DSPM_BASE.padEnd(42)}║`);
   console.log(`║ 폴링간격: ${String(POLL_MS).padEnd(42)}ms ║`);
   console.log(`║ 자동동기화: ${(AUTO_SYNC_MIN > 0 ? `${AUTO_SYNC_MIN}분마다 (오늘 이력)` : '끔').padEnd(38)}║`);
   console.log(`║ 공정진행량: ${(PROCCNT_SEC > 0 ? `${PROCCNT_SEC}초마다 (getproccnt)` : '끔').padEnd(38)}║`);
+  console.log(`║ 병목판정  : ${(PROCCNT_SEC > 0 ? `${PROCCNT_SEC}초마다 (BN1~BN5)` : '끔').padEnd(38)}║`);
   console.log('╚═══════════════════════════════════════════════════════╝');
   console.log('');
 
@@ -434,6 +689,10 @@ process.on('SIGTERM', () => {
   log('🛑 종료 중...');
   process.exit(0);
 });
+
+// 테스트에서 판정 함수만 불러 쓸 수 있게
+module.exports = { evaluateBottlenecks, logSpans, groupQueueOf, DEFAULT_BN_RULES };
+if (require.main !== module) return;
 
 main().catch(err => {
   console.error('치명적 오류:', err);

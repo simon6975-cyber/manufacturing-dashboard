@@ -20,6 +20,7 @@ import {
   addHistoryEntry, getHistory,
   StopCodeV2, BottleneckCodeV2, Severity, CodeHistoryEntry,
 } from '@/lib/codes-service';
+import BottleneckRuleSettings from '@/components/BottleneckRuleSettings';
 
 const defaultStopCodes: StopCodeV2[] = [
   { id: 's1', code: 'S1', name: '장비 셋팅', description: '제작을 위한 장비 셋팅', active: true },
@@ -158,6 +159,7 @@ export default function CodesPage() {
           </tbody></SortableContext></DndContext>
         </table></div>
       </section>
+      <BottleneckRuleSettings/>
       <div className="text-xs text-gray-600 pb-4">💡 좌측 ⠿⠿ 아이콘을 <strong>드래그</strong>해서 순서를 변경할 수 있습니다. 코드/명칭/설명은 클릭해서 바로 수정 가능합니다.</div>
       <HistoryPanel open={showHistory} onClose={()=>setShowHistory(false)} history={history} loading={historyLoading}/>
     </div>

@@ -41,7 +41,11 @@ node dspm-log-sync.js
 4. 대시보드가 요청 문서를 감시 → 완료 시 자동 새로고침
 5. `PROCCNT_SEC`초(기본 60)마다 `getproccnt`(공정별 TOT/CNT/REMAIN)를 `dspm_live/proccnt`에 저장
    — 공정흐름도 내지·표지 장비군 대기물량이 이 값을 읽는다
-6. 대기 중인 요청이 없을 때 `AUTO_SYNC_MIN`분마다 자동 동기화
+6. 같은 주기로 **병목 판정(BN1~BN5)** — 장비별 결과를 `dspm_live/bottlenecks`에 저장(바뀔 때만, 그대로면 10분마다)
+   - 규칙: `settings/bottleneck_rules` (대시보드 설정 > 정지/병목코드 > 병목 판정 규칙), 5분마다 다시 읽음
+   - 입력: 공정 진행량(대기물량), 장비군 최대치(`settings/queue_limits`), DSPM 실시간 상태(`getmachinestate`), 자동 동기화가 받은 DSPM 로그
+   - 판정 상태(대기물량 초과 시작 시각 등)는 `dspm_live/bottleneck_state`에 5분마다 보관 — 스크립트를 다시 켜도 이어짐
+7. 대기 중인 요청이 없을 때 `AUTO_SYNC_MIN`분마다 자동 동기화
    - 장비 목록은 `machine_definitions`(장비관리 화면)의 MCNO 기준
    - 오늘 날짜를 통째로 다시 저장(날짜가 바뀐 직후엔 어제 분도 마감 저장)
    - 요청이 들어오면 요청이 먼저 처리된다

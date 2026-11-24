@@ -133,3 +133,15 @@ html[data-theme="light"] .text-violet-400 { color: oklch(49.1% 0.27 292.581); }
 html[data-theme="light"] ::-webkit-scrollbar-track { background: oklch(96.7% 0.003 264.542); }
 html[data-theme="light"] ::-webkit-scrollbar-thumb { background: oklch(87.2% 0.01 258.338); }
 html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: oklch(70.7% 0.022 261.325); }
+
+/* 병목 알람 — violet-500 (STOP 깜박임보다 약하게) */
+@keyframes bottleneck-pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.55), 0 0 8px 1px rgba(139, 92, 246, 0.35); }
+  50% { box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.9), 0 0 24px 6px rgba(139, 92, 246, 0.6); }
+}
+.animate-bottleneck-pulse {
+  animation: bottleneck-pulse-glow 1.6s ease-in-out infinite;
+}
+
+/* 병목 배지(violet) — 화이트 테마에서 진하게 */
+html[data-theme="light"] .text-violet-300 { color: oklch(49.1% 0.27 292.581); }

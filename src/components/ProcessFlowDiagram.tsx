@@ -25,6 +25,7 @@ interface ProcessData {
   group: string; equipmentGroup: string;
   runCount: number;           // 진행중 작업건수 (RUNCNT)
   dayCompletedCount: number;  // 금일 완료건수 (DAYCOMCNT)
+  bottlenecks?: ActiveBottleneck[]; // 현재 걸린 병목 (사내PC 판정, dspm_live/bottlenecks)
 }
 
 interface DynamicEquipmentGroup {
@@ -40,6 +41,7 @@ import { getCountUnit } from '@/lib/count-unit';
 import { saveDailyProduction, todayKST } from '@/lib/production-daily';
 import { useQueueLimits, groupKey } from '@/lib/queue-limits';
 import { fetchApiJson, describeLoadError } from '@/lib/fetch-error';
+import type { ActiveBottleneck } from '@/lib/bottleneck-rules';
 
 // 3가지 상태만 표시 (SETUP→IDLE 병합)
 const statusConfig: Record<DisplayStatus, { banner:string; text:string; border:string; bar:string; icon:React.ComponentType<{className?:string}>|null }> = {
@@ -200,10 +202,11 @@ const ProcessCard: React.FC<{ process:ProcessData; onSelect?:(no:number)=>void }
   const isStop = ds === 'STOP';
   const isRunning = ds === 'RUN';
   const displayProgress = isRunning ? process.jobProgress : 0;
+  const bns = process.bottlenecks || [];
 
   return (
     <div onClick={()=>onSelect?.(process.no)}
-      className={`rounded-md overflow-hidden border ${cfg.border} bg-gray-900 flex flex-col cursor-pointer hover:brightness-110 hover:ring-1 hover:ring-white/20 transition ${isStop?'animate-stop-pulse':''}`}>
+      className={`rounded-md overflow-hidden border ${cfg.border} bg-gray-900 flex flex-col cursor-pointer hover:brightness-110 hover:ring-1 hover:ring-white/20 transition ${isStop?'animate-stop-pulse':bns.length>0?'animate-bottleneck-pulse':''}`}>
       <div className={`${cfg.banner} ${cfg.text} px-2.5 py-1 flex items-center justify-between text-[11px] font-bold ${isStop?'animate-stop-banner':''}`}>
         <span className="flex items-center gap-1 tracking-wide min-w-0 truncate">
           {StatusIcon&&<StatusIcon className="w-3 h-3 shrink-0"/>}
@@ -212,6 +215,12 @@ const ProcessCard: React.FC<{ process:ProcessData; onSelect?:(no:number)=>void }
         </span>
         <span className="font-mono opacity-70 shrink-0 ml-1">{String(process.no).padStart(2,'0')}</span>
       </div>
+      {bns.length>0&&(
+        <div className="bg-violet-600 text-white px-2.5 py-0.5 flex items-center gap-1 text-[10px] font-bold truncate" title={bns.map(b=>`${b.code} ${b.name} — ${b.detail}`).join('\n')}>
+          <AlertTriangle className="w-3 h-3 shrink-0"/>
+          <span className="truncate">{bns[0].code} {bns[0].name}{bns.length>1?` 외 ${bns.length-1}`:''}</span>
+        </div>
+      )}
       <div className="p-2.5 flex-1 flex flex-col">
         <h3 className="text-gray-100 text-[13px] font-semibold mb-2 truncate" title={process.name}>{process.name}</h3>
         <div className="mt-auto">
@@ -465,6 +474,20 @@ const DetailPanel: React.FC<{process:ProcessData;onClose:()=>void;now:number}> =
         <InfoRow label="현재 상태"><span className="flex items-center gap-2"><span className={`w-2 h-2 rounded-full ${statusDot[ds]}`}/><span className="text-gray-200">{statusLabel[ds]}</span></span></InfoRow>
         <InfoRow label="진행중 작업량"><span className="text-sm text-gray-300">{process.runCount > 0 ? `${process.runCount.toLocaleString()} ${getCountUnit(process.equipmentGroup)}` : '-'}</span></InfoRow>
         <InfoRow label="금일 완료량"><span className="text-sm text-gray-300">{process.dayCompletedCount > 0 ? `${process.dayCompletedCount.toLocaleString()} ${getCountUnit(process.equipmentGroup)}` : '-'}</span></InfoRow>
+        {(process.bottlenecks||[]).length>0&&(
+          <div className="py-3">
+            <span className="text-sm text-gray-400">병목</span>
+            <div className="mt-1.5 space-y-1">
+              {(process.bottlenecks||[]).map(b=>(
+                <div key={b.code} className="flex items-start gap-2 text-xs">
+                  <span className="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 border border-violet-500/30 font-mono font-bold shrink-0">{b.code}</span>
+                  <span className="text-gray-200 shrink-0">{b.name}</span>
+                  <span className="text-gray-500">{b.detail}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <InfoRow label="금일 정지 사유">{process.stopReason?(<span className="flex items-center gap-1.5"><span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-xs font-medium border border-indigo-500/30">{process.stopReason}</span><span className="text-xs text-gray-400">{stopCodeNames[process.stopReason]||''}</span></span>):(<span className="text-gray-500">없음</span>)}</InfoRow>
       </div>
 
@@ -599,6 +622,22 @@ const ProcessFlowDiagram: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // dspm_live/bottlenecks 구독 — 사내PC 가 1분마다 판정한 장비별 병목(BN1~BN5).
+  // 15분 넘게 갱신이 없으면(스크립트 중지) 오래된 알람을 띄우지 않는다
+  const [bottleneckDoc, setBottleneckDoc] = useState<{ machines: Record<string, ActiveBottleneck[]>; at: number } | null>(null);
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'dspm_live', 'bottlenecks'), (snap) => {
+      if (!snap.exists()) { setBottleneckDoc(null); return; }
+      const d = snap.data();
+      setBottleneckDoc({ machines: d.machines || {}, at: d.updatedAt?.toMillis?.() ?? 0 });
+    }, () => setBottleneckDoc(null));
+    return unsub;
+  }, []);
+  const bottlenecksByMachine = useMemo(() => {
+    if (!bottleneckDoc || now - bottleneckDoc.at > 15 * 60000) return {} as Record<string, ActiveBottleneck[]>;
+    return bottleneckDoc.machines;
+  }, [bottleneckDoc, now]);
+
   // dspm_live/proccnt 구독 — 공정별 TOT/CNT/REMAIN (장비군 대기물량, computeGroupQueues 참고)
   const [proccnt, setProccnt] = useState<ProcCount[] | null>(null);
   useEffect(() => {
@@ -719,8 +758,10 @@ const ProcessFlowDiagram: React.FC = () => {
         map[def.no] = {...base, initialElapsedSeconds:elapsed, runCount, dayCompletedCount};
       }
     });
+    // 병목 알람 붙이기
+    Object.values(map).forEach(m => { const b = bottlenecksByMachine[String(m.no)]; if (b && b.length > 0) m.bottlenecks = b; });
     return map;
-  },[firebaseStates,now,allDefs,dspmByMcno,machineDefs,stateSpans]);
+  },[firebaseStates,now,allDefs,dspmByMcno,machineDefs,stateSpans,bottlenecksByMachine]);
 
   const totalMachines = allDefs.length;
 
@@ -730,6 +771,10 @@ const ProcessFlowDiagram: React.FC = () => {
     Object.values(p).forEach(proc=>{ c[toDisplay(proc.status)]++; });
     return c;
   },[p]);
+
+  // 병목 장비 수·코드 (헤더 표시)
+  const bottleneckCount = Object.values(p).filter(m => (m.bottlenecks || []).length > 0).length;
+  const bottleneckCodesNow = Array.from(new Set(Object.values(p).flatMap(m => (m.bottlenecks || []).map(b => b.code)))).sort();
 
   // 장비군별 대기물량 (내지·표지는 실데이터 — computeGroupQueues 주석 참고)
   const groupQueues = useMemo(() => computeGroupQueues(groupsByProcess, p, proccnt), [groupsByProcess, p, proccnt]);
@@ -781,6 +826,11 @@ const ProcessFlowDiagram: React.FC = () => {
           <h2 className="text-2xl font-bold text-gray-100">제작공정 흐름도</h2>
           <p className="text-xs text-gray-500 mt-1">
             내지 · 표지 (병렬) → 제본 → 포장 · 실시간 상태 모니터링
+            {bottleneckCount > 0 && (
+              <span className="ml-2 text-violet-500 font-medium">
+                • 병목 {bottleneckCount}대 ({bottleneckCodesNow.join('·')})
+              </span>
+            )}
             {overloadedGroupCount > 0 && (
               <span className="ml-2 text-amber-400 font-medium">
                 • 대기물량 초과 {overloadedGroupCount}개 장비군 (장비 관리의 장비군별 최대치 기준)

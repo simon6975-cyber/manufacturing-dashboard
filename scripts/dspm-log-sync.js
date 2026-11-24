@@ -509,13 +509,16 @@ function evaluateBottlenecks(input, st) {
       } else if (match) {
         if (!st.match[m.mcno] || st.match[m.mcno].code !== match) st.match[m.mcno] = { code: match, since: now };
       } else {
-        // 처음 RUN 을 본 시각부터 세되, 로그의 마지막 구간이 RUN 이고 그 RUN 이 지금까지 이어진다면
-        // (로그는 10분마다 갱신 — 끝이 지금으로부터 15분 이내) 로그상 RUN 시작으로 앞당긴다.
-        // 스크립트 시작 직후처럼 로그가 아직 없을 때 '지금'으로 잡힌 값도 로그가 들어오면 바로잡힌다.
+        // 연속 RUN 시작 시각은 DSPM 로그를 기준으로 한다 (1분 간격 실시간 상태만 보면 그 사이의
+        // 짧은 IDLE·정지를 놓쳐, 5분짜리 RUN 이 이어붙어 '3시간 연속 RUN' 으로 잘못 잡혔다).
+        //  - 로그의 마지막 구간이 RUN 이고 지금까지 이어지면(끝이 15분 이내 — 로그는 10분마다 갱신) 그 시작
+        //  - 로그의 마지막 구간이 RUN 이 아니면, 그 구간이 끝난 뒤 다시 RUN 이 된 것 → 그 끝 이후
+        //  - 로그가 없으면(스크립트 시작 직후) 처음 RUN 을 본 시각
         const last = spans[spans.length - 1];
-        const fromLog = last && last.state === 'RUN' && now - last.end <= 15 * 60000 ? last.start : null;
-        const cur = st.runSince[m.mcno] ?? now;
-        st.runSince[m.mcno] = fromLog != null ? Math.min(cur, fromLog) : cur;
+        let since = st.runSince[m.mcno] ?? now;
+        if (last && last.state === 'RUN' && now - last.end <= 15 * 60000) since = last.start;
+        else if (last && last.state !== 'RUN') since = Math.max(since, last.end);
+        st.runSince[m.mcno] = since;
       }
       const r4 = rules.BN4;
       const since = match ? st.match[m.mcno]?.since : st.runSince[m.mcno];
@@ -602,10 +605,54 @@ async function runBottleneckTick() {
     lastBnJson = json;
     lastBnWrite = now;
   }
-  if (now - lastStateWrite >= 5 * 60000) {
+  const openChanged = await recordBottleneckEvents(result, inputs.machines, now);
+  if (openChanged || now - lastStateWrite >= 5 * 60000) {
     await db.doc('dspm_live/bottleneck_state').set({ state: bnState, updatedAt: FieldValue.serverTimestamp() });
     lastStateWrite = now;
   }
+}
+
+/**
+ * 병목 이력 — 발생·해제 시점에만 bottleneck_events 에 한 건씩 기록 (정지/병목 분석 화면이 읽음)
+ * 문서: { machineNo, machineName, code, name, detectedAt, since, endedAt(null=진행 중), detail, lastDetail, date }
+ * 진행 중인 이력은 bnState.open 에 두어 스크립트를 다시 켜도 같은 건으로 이어서 닫는다.
+ * 반환: open 목록이 바뀌었는지 (바뀌면 판정 상태를 바로 저장)
+ */
+async function recordBottleneckEvents(result, machines, now) {
+  bnState.open = bnState.open || {};
+  let changed = false;
+  const active = new Set();
+  for (const [no, list] of Object.entries(result)) {
+    for (const b of list) {
+      const key = `${no}|${b.code}`;
+      active.add(key);
+      const open = bnState.open[key];
+      if (open) { open.lastDetail = b.detail; continue; }
+      const m = machines.find((x) => String(x.no) === no);
+      try {
+        const ref = await db.collection('bottleneck_events').add({
+          machineNo: Number(no), machineName: m ? m.name : '', code: b.code, name: b.name,
+          detectedAt: now, since: b.since, endedAt: null, detail: b.detail, lastDetail: b.detail,
+          date: dateStrKST(now),
+        });
+        bnState.open[key] = { id: ref.id, detectedAt: now, lastDetail: b.detail };
+        changed = true;
+      } catch (err) {
+        log(`⚠️  병목 이력 기록 실패(${key}): ${err.message}`);
+      }
+    }
+  }
+  for (const [key, open] of Object.entries(bnState.open)) {
+    if (active.has(key)) continue;
+    try {
+      await db.collection('bottleneck_events').doc(open.id).update({ endedAt: now, lastDetail: open.lastDetail || '' });
+    } catch (err) {
+      log(`⚠️  병목 이력 해제 기록 실패(${key}): ${err.message}`);
+    }
+    delete bnState.open[key];
+    changed = true;
+  }
+  return changed;
 }
 
 /* ── 요청 감시 + 작업 루프 ── */
@@ -663,7 +710,7 @@ async function pollOnce() {
 async function main() {
   console.log('');
   console.log('╔═══════════════════════════════════════════════════════╗');
-  console.log('║     DSPM Log Sync — 사내PC 동기화 스크립트 v1.4     ║');
+  console.log('║     DSPM Log Sync — 사내PC 동기화 스크립트 v1.5     ║');
   console.log('╠═══════════════════════════════════════════════════════╣');
   console.log(`║ DSPM API: ${DSPM_BASE.padEnd(42)}║`);
   console.log(`║ 폴링간격: ${String(POLL_MS).padEnd(42)}ms ║`);

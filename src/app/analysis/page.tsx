@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { useMachineDefs } from '@/lib/machine-defs';
 import { useCollapsible } from '@/lib/useCollapsible';
+import type { BottleneckEvent } from '@/lib/bottleneck-rules';
+import { fetchApiJson, describeLoadError } from '@/lib/fetch-error';
 import { useStopCodes } from '@/lib/useStopCodes';
 
 /* ── 타입 ── */
@@ -121,6 +123,9 @@ export default function AnalysisPage() {
   const [dateTo, setDateTo] = useState(todayKST());
   const [selectedMachines, setSelectedMachines] = useState<Set<number>>(new Set());
   const [results, setResults] = useState<MachineResult[]>([]);
+  // 병목 이력 (장비번호별) — 사내PC 가 기록한 bottleneck_events
+  const [bnEvents, setBnEvents] = useState<Record<number, BottleneckEvent[]>>({});
+  const [bnError, setBnError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [queried, setQueried] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
@@ -284,6 +289,17 @@ export default function AnalysisPage() {
 
     const machines = allDefs.filter(d => selectedMachines.has(d.no) && d.mcno != null);
     setProgress({ done: 0, total: machines.length });
+
+    // 병목 이력은 상태 이력과 따로 불러온다 (실패해도 분석은 보여줌)
+    setBnEvents({});
+    setBnError(null);
+    fetchApiJson<{ events: BottleneckEvent[] }>(`/api/bottleneck-events?start=${dateFrom}&end=${dateTo}`, { signal: controller.signal })
+      .then(j => {
+        const byMachine: Record<number, BottleneckEvent[]> = {};
+        for (const ev of j.events || []) (byMachine[ev.machineNo] ||= []).push(ev);
+        setBnEvents(byMachine);
+      })
+      .catch(err => { if (!(err instanceof Error && err.name === 'AbortError')) setBnError(describeLoadError(err)); });
 
     try {
       const entries = await fetchFirebaseData(controller.signal);
@@ -739,6 +755,8 @@ export default function AnalysisPage() {
                       expanded={expandedMachine === r.machineNo}
                       onToggle={() => setExpandedMachine(expandedMachine === r.machineNo ? null : r.machineNo)}
                       syncStatus={syncStatus}
+                      bottleneckEvents={bnEvents[r.machineNo] || []}
+                      bottleneckError={bnError}
                     />
                   ))}
                 </div>
@@ -931,12 +949,16 @@ function MachineResultCard({
   expanded,
   onToggle,
   syncStatus,
+  bottleneckEvents,
+  bottleneckError,
 }: {
   result: MachineResult;
   stopCodeMap: Record<string, string>;
   expanded: boolean;
   onToggle: () => void;
   syncStatus: SyncStatus;
+  bottleneckEvents: BottleneckEvent[];
+  bottleneckError: string | null;
 }) {
   const runSec = r.states?.RUN?.totalSeconds || 0;
   const idleSec = r.states?.IDLE?.totalSeconds || 0;
@@ -1138,6 +1160,9 @@ function MachineResultCard({
             </div>
           )}
 
+          {/* 병목 이력 — 사내PC 판정(BN1~BN5) 발생·해제 기록 */}
+          <BottleneckHistory events={bottleneckEvents} error={bottleneckError} />
+
           {/* 일별 요약 */}
           {r.dailySummary && r.dailySummary.length > 0 && (
             <div>
@@ -1223,6 +1248,69 @@ function MachineResultCard({
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// 병목 이력: 코드별 요약(횟수·누적) + 발생 목록(최신순)
+function BottleneckHistory({ events, error }: { events: BottleneckEvent[]; error: string | null }) {
+  // '진행 중' 지속시간 기준 시각 — 조회 결과를 그릴 때 한 번 정한다
+  const [now] = useState(() => Date.now());
+  const durationSec = (e: BottleneckEvent) => Math.max(0, ((e.endedAt ?? now) - e.detectedAt) / 1000);
+  const byCode = new Map<string, { name: string; count: number; seconds: number }>();
+  for (const e of events) {
+    const x = byCode.get(e.code) || { name: e.name, count: 0, seconds: 0 };
+    x.count += 1;
+    x.seconds += durationSec(e);
+    byCode.set(e.code, x);
+  }
+  const fmtTime = (ms: number) => {
+    const d = new Date(ms + 9 * 3600 * 1000);
+    return `${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')} ${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+  };
+
+  return (
+    <div>
+      <h4 className="text-xs font-semibold text-gray-400 mb-2">병목 이력</h4>
+      {error ? (
+        <p className="text-xs text-amber-400">병목 이력을 불러오지 못했습니다 · {error}</p>
+      ) : events.length === 0 ? (
+        <p className="text-xs text-gray-600">선택 기간에 발생한 병목이 없습니다</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {Array.from(byCode.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([code, x]) => (
+              <span key={code} className="text-[11px] px-2 py-1 rounded border border-violet-500/30 bg-violet-500/10 text-gray-300">
+                <span className="font-mono font-bold text-violet-300 mr-1">{code}</span>{x.name} · {x.count}회 · {formatSeconds(x.seconds)}
+              </span>
+            ))}
+          </div>
+          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="text-[10px] text-gray-500 border-b border-gray-800">
+                  <th className="text-left font-medium py-1">코드</th>
+                  <th className="text-left font-medium py-1">발생</th>
+                  <th className="text-left font-medium py-1">해제</th>
+                  <th className="text-right font-medium py-1">지속</th>
+                  <th className="text-left font-medium py-1 pl-3 hidden sm:table-cell">내용</th>
+                </tr>
+              </thead>
+              <tbody>
+                {events.map(e => (
+                  <tr key={e.id} className="border-b border-gray-800/40">
+                    <td className="py-1"><span className="font-mono font-bold text-violet-300">{e.code}</span> <span className="text-gray-400">{e.name}</span></td>
+                    <td className="py-1 font-mono text-gray-300">{fmtTime(e.detectedAt)}</td>
+                    <td className="py-1 font-mono text-gray-300">{e.endedAt != null ? fmtTime(e.endedAt) : <span className="text-violet-300 font-sans font-semibold">진행 중</span>}</td>
+                    <td className="py-1 text-right text-gray-300">{formatSeconds(durationSec(e))}</td>
+                    <td className="py-1 pl-3 text-gray-500 hidden sm:table-cell">{e.lastDetail || e.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

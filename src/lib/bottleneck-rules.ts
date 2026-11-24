@@ -55,3 +55,9 @@ export function describeRule(code: BottleneckCode, r: BottleneckRules): string {
 
 /** 실시간 판정 결과 — dspm_live/bottlenecks { machines: { [장비번호]: ActiveBottleneck[] } } */
 export interface ActiveBottleneck { code: string; name: string; since: number; detail: string }
+
+/** 병목 이력 한 건 — bottleneck_events (사내PC 가 발생·해제 때 기록). endedAt null = 진행 중 */
+export interface BottleneckEvent {
+  id: string; machineNo: number; machineName: string; code: string; name: string;
+  detectedAt: number; since: number | null; endedAt: number | null; detail: string; lastDetail: string;
+}

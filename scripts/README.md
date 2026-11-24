@@ -45,6 +45,7 @@ node dspm-log-sync.js
    - 규칙: `settings/bottleneck_rules` (대시보드 설정 > 정지/병목코드 > 병목 판정 규칙), 5분마다 다시 읽음
    - 입력: 공정 진행량(대기물량), 장비군 최대치(`settings/queue_limits`), DSPM 실시간 상태(`getmachinestate`), 자동 동기화가 받은 DSPM 로그
    - 판정 상태(대기물량 초과 시작 시각 등)는 `dspm_live/bottleneck_state`에 5분마다 보관 — 스크립트를 다시 켜도 이어짐
+   - 병목 이력: 발생·해제 때만 `bottleneck_events`에 한 건씩 기록 (정지/병목 분석 화면의 '병목 이력')
 7. 대기 중인 요청이 없을 때 `AUTO_SYNC_MIN`분마다 자동 동기화
    - 장비 목록은 `machine_definitions`(장비관리 화면)의 MCNO 기준
    - 오늘 날짜를 통째로 다시 저장(날짜가 바뀐 직후엔 어제 분도 마감 저장)

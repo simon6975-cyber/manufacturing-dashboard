@@ -105,7 +105,7 @@ html[data-theme="light"] .bg-black { background-color: oklch(96.7% 0.003 264.542
 html[data-theme="light"] .text-white { color: oklch(21% 0.034 264.665); }
 /* 진한 색 버튼·배너 위의 흰 글자는 그대로 흰색 */
 html[data-theme="light"] .text-white:is([class~="bg-rose-500"], [class~="bg-rose-600"], [class~="bg-red-500"], [class~="bg-red-600"],
-  [class~="bg-blue-500"], [class~="bg-blue-600"], [class~="bg-emerald-600"], [class~="bg-cyan-600"]) { color: #fff; }
+  [class~="bg-blue-500"], [class~="bg-blue-600"], [class~="bg-emerald-600"], [class~="bg-cyan-600"], [class~="bg-violet-600"]) { color: #fff; }
 html[data-theme="light"] .text-amber-200 { color: oklch(55.5% 0.163 48.998); }
 html[data-theme="light"] .text-amber-300 { color: oklch(55.5% 0.163 48.998); }
 html[data-theme="light"] .text-amber-400 { color: oklch(55.5% 0.163 48.998); }

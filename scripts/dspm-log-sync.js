@@ -535,6 +535,61 @@ function evaluateBottlenecks(input, st) {
   return result;
 }
 
+/**
+ * 일별 생산량 추적 (순수 함수 — st 를 갱신하고, 써야 할 { date, machine, value } 목록을 돌려준다)
+ *
+ * DSPM DAYCOMCNT 는 '오늘 완료량' 카운터인데 자정에 바로 0 이 되지 않는다 — 다음 작업이 시작될 때(카운터가
+ * 줄어들 때) 초기화된다. 예전엔 대시보드·크론이 읽은 시각의 날짜로 저장해서,
+ *   · 새벽에 열면 전날 값이 오늘 날짜로 복사되고 (화·수, 토·일 값이 똑같던 원인)
+ *   · 아무도 안 열고 크론도 못 잡은 날은 통째로 비었다
+ * 여기서는 1분마다 보면서 날짜가 바뀐 뒤 카운터가 줄어드는(초기화) 순간부터 새 날짜로 센다.
+ * 초기화 전의 값은 전날 것으로 보고 전날 기록을 올린다. 그날 작업이 없으면 그날 기록은 남지 않는다.
+ * 쓰기는 장비당 10분에 한 번(값이 바뀐 경우만) + 날짜가 넘어갈 때 전날 마지막 값.
+ */
+const PROD_WRITE_MS = 10 * 60000;
+
+function trackDailyProduction(st, machines, live, now) {
+  const today = dateStrKST(now);
+  const writes = [];
+  for (const m of machines) {
+    if (m.mcno == null) continue;
+    const lv = live.get(m.mcno);
+    const v = lv ? lv.DAYCOMCNT : null;
+    if (v == null) continue;
+    const key = String(m.mcno);
+    let s = st[key];
+    if (!s) s = st[key] = { date: today, value: v, written: null, writtenAt: 0, pending: null };
+
+    if (s.date !== today) {
+      // 날짜가 넘어감 — 전날 마지막 값을 확정하고, 새 날짜는 카운터 초기화를 기다린다
+      if (s.value != null && s.value > 0 && s.value !== s.written) writes.push({ date: s.date, machine: m, value: s.value });
+      // 그날 초기화가 한 번도 없었으면(작업 없던 날) 여전히 더 이전 날의 카운터를 기다리는 중
+      s.pending = s.value != null && s.value > 0 ? { date: s.date, value: s.value } : s.pending;
+      st[key] = s = { date: today, value: null, written: null, writtenAt: 0, pending: s.pending };
+    }
+
+    if (s.pending) {
+      if (v < s.pending.value) {
+        s.pending = null;              // 카운터 초기화 — 지금부터 오늘 값
+      } else {
+        if (v > s.pending.value) {     // 초기화 전 늘어난 양은 전날 작업
+          s.pending.value = v;
+          writes.push({ date: s.pending.date, machine: m, value: v });
+        }
+        continue;
+      }
+    }
+
+    s.value = v;
+    if (v > 0 && v !== s.written && now - s.writtenAt >= PROD_WRITE_MS) {
+      writes.push({ date: today, machine: m, value: v });
+      s.written = v;
+      s.writtenAt = now;
+    }
+  }
+  return writes;
+}
+
 // 실행부 — 1분마다 (공정 진행량 저장 직후)
 const latestLogs = new Map();       // mcno → 최근 DSPM 로그 (자동 동기화가 10분마다 갱신)
 let lastProccnt = null;
@@ -560,6 +615,7 @@ async function loadBnInputs(now) {
       name: x.name || `장비 ${d.id}`,
       mcno: typeof x.mcno === 'number' ? x.mcno : null,
       group: x.equipmentGroup || String(x.name || '').replace(/\s*\d+호기$/, '').replace(/\s+/g, ''),
+      processGroup: x.group || '',
     });
   });
   const limits = {};
@@ -586,10 +642,22 @@ async function runBottleneckTick() {
       const mcno = Number(r.MCNO);
       if (!mcno) continue;
       const matchKey = Object.keys(r).find((k) => /MATCH|매칭/i.test(k));
-      live.set(mcno, { STATE: r.STATE, match: matchKey ? r[matchKey] : null });
+      const dayCnt = Number(r.DAYCOMCNT);
+      live.set(mcno, { STATE: r.STATE, match: matchKey ? r[matchKey] : null, DAYCOMCNT: Number.isFinite(dayCnt) ? dayCnt : null });
     }
   } catch (err) {
     // 실시간 상태가 없으면 BN2(전공정 IDLE 판단)·BN4 는 이번 회차 건너뜀 — 로그 기반 판정은 계속
+  }
+
+  // 일별 생산량 (production_daily) — 같은 실시간 상태의 DAYCOMCNT 로 기록
+  bnState.prod = bnState.prod || {};
+  const prodWrites = trackDailyProduction(bnState.prod, inputs.machines, live, now);
+  for (const w of prodWrites) {
+    await db.doc(`production_daily/${w.date}/machines/${w.machine.no}`).set({
+      machineNo: w.machine.no, machineName: w.machine.name, equipmentGroup: w.machine.group,
+      group: w.machine.processGroup || '', dayCompletedCount: w.value, date: w.date,
+      updatedAt: FieldValue.serverTimestamp(), source: 'dspm-log-sync',
+    }, { merge: true }).catch((err) => log(`⚠️  생산량 저장 실패(${w.date} ${w.machine.name}): ${err.message}`));
   }
 
   const result = evaluateBottlenecks({ now, ...inputs, live, logs: latestLogs, proccnt: lastProccnt }, bnState);
@@ -710,7 +778,7 @@ async function pollOnce() {
 async function main() {
   console.log('');
   console.log('╔═══════════════════════════════════════════════════════╗');
-  console.log('║     DSPM Log Sync — 사내PC 동기화 스크립트 v1.5     ║');
+  console.log('║     DSPM Log Sync — 사내PC 동기화 스크립트 v1.6     ║');
   console.log('╠═══════════════════════════════════════════════════════╣');
   console.log(`║ DSPM API: ${DSPM_BASE.padEnd(42)}║`);
   console.log(`║ 폴링간격: ${String(POLL_MS).padEnd(42)}ms ║`);
@@ -767,7 +835,7 @@ process.on('SIGTERM', () => {
 });
 
 // 테스트에서 판정 함수만 불러 쓸 수 있게
-module.exports = { evaluateBottlenecks, logSpans, groupQueueOf, DEFAULT_BN_RULES };
+module.exports = { evaluateBottlenecks, logSpans, groupQueueOf, DEFAULT_BN_RULES, trackDailyProduction };
 if (require.main !== module) return;
 
 main().catch(err => {

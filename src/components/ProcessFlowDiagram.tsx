@@ -38,7 +38,6 @@ interface DynamicEquipmentGroup {
 const DEFAULT_QUEUE_THRESHOLD = 5000;
 
 import { getCountUnit } from '@/lib/count-unit';
-import { saveDailyProduction, todayKST } from '@/lib/production-daily';
 import { useQueueLimits, groupKey } from '@/lib/queue-limits';
 import { fetchApiJson, describeLoadError } from '@/lib/fetch-error';
 import type { ActiveBottleneck } from '@/lib/bottleneck-rules';
@@ -665,22 +664,11 @@ const ProcessFlowDiagram: React.FC = () => {
       });
       setDspmByMcno(map);
 
-      // DAYCOMCNT → production_daily 자동 저장 (mcno→machineNo 매핑)
-      const date = todayKST();
-      Object.entries(machineDefs).forEach(([noStr, def]) => {
-        if (def.mcno == null) return;
-        const dspm = map[def.mcno];
-        if (dspm && dspm.dayCompletedCount > 0) {
-          saveDailyProduction(
-            def.no, def.name,
-            def.equipmentGroup || def.name.replace(/\s*\d+호기$/, '').replace(/\s+/g, ''),
-            def.group, dspm.dayCompletedCount, date,
-          ).catch(() => {});
-        }
-      });
+      // production_daily 저장은 사내PC 스크립트(v1.6+)가 한다 — 화면이 읽은 시각의 날짜로 저장하면
+      // DSPM 카운터가 초기화되기 전(새벽)의 전날 값이 오늘로 복사됐다
     });
     return unsub;
-  }, [machineDefs]);
+  }, []);
 
   // 장비 정의에서 동적으로 장비군 생성
   const dynamicGroups: DynamicEquipmentGroup[] = useMemo(() => {

@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { CalendarDays, Search } from 'lucide-react';
-import { getDailyProduction, todayKST, saveDailyProduction, DailyProductionEntry } from '@/lib/production-daily';
+import { getDailyProduction, todayKST, DailyProductionEntry } from '@/lib/production-daily';
 import { useMachineDefs } from '@/lib/machine-defs';
 import { getCountUnit } from '@/lib/count-unit';
 import { db } from '@/lib/firebase';
@@ -61,7 +61,7 @@ export default function PeriodSummaryPage() {
   const [endDate, setEndDate] = useState(todayKST());
   const [allEntries, setAllEntries] = useState<DailyProductionEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const { defs: machineDefs, allDefs } = useMachineDefs();
+  const { allDefs } = useMachineDefs();
 
   // DSPM 실시간 데이터 (오늘이 범위에 포함된 경우)
   const [dspmByMcno, setDspmByMcno] = useState<Record<number, number>>({});
@@ -85,23 +85,11 @@ export default function PeriodSummaryPage() {
         }
       });
       setDspmByMcno(map);
-
-      // production_daily 자동저장
-      const date = todayKST();
-      Object.entries(machineDefs).forEach(([, def]) => {
-        if (def.mcno == null) return;
-        const dspm = map[def.mcno];
-        if (dspm && dspm > 0) {
-          saveDailyProduction(
-            def.no, def.name,
-            def.equipmentGroup || def.name.replace(/\s*\d+호기$/, '').replace(/\s+/g, ''),
-            def.group, dspm, date,
-          ).catch(() => {});
-        }
-      });
+      // production_daily 저장은 사내PC 스크립트(v1.6+)가 한다 — 화면이 읽은 시각의 날짜로 저장하면
+      // DSPM 카운터가 초기화되기 전(새벽)의 전날 값이 오늘로 복사됐다
     });
     return unsub;
-  }, [includesToday, machineDefs]);
+  }, [includesToday]);
 
   // 프리셋 적용
   const applyPreset = useCallback((mode: ViewMode) => {

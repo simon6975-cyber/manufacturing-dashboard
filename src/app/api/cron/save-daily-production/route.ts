@@ -13,6 +13,8 @@ import {
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // 상태 누적 포함하여 60초
 
+const SAVE_PRODUCTION_IN_CRON = false;
+
 // KST 기준 오늘 날짜
 function todayKST(): string {
   const now = new Date();
@@ -48,7 +50,9 @@ export async function GET(request: Request) {
     const now = Date.now();
 
     // ═══════════════════════════════════════════════════
-    // PART 1: 생산량 저장 (기존 로직)
+    // PART 1: 생산량 저장 — 꺼둠 (SAVE_PRODUCTION_IN_CRON)
+    // 사내PC 스크립트(v1.6+)가 DSPM 카운터 초기화를 보면서 날짜별로 기록한다. 이 크론은
+    // 23:55 의 스냅샷 값을 '오늘'로 덮어써, 스크립트의 정확한 값과 섞이지 않게 쓰지 않는다.
     // ═══════════════════════════════════════════════════
     let savedCount = 0;
 
@@ -58,7 +62,7 @@ export async function GET(request: Request) {
     // 장비 정의 읽기 (두 파트 공통)
     const machineDefSnap = await adminDb.collection('machine_definitions').get();
 
-    if (Array.isArray(rawList) && rawList.length > 0 && !machineDefSnap.empty) {
+    if (SAVE_PRODUCTION_IN_CRON && Array.isArray(rawList) && rawList.length > 0 && !machineDefSnap.empty) {
       // MCNO → DAYCOMCNT 매핑
       const dspmMap: Record<number, number> = {};
       rawList.forEach((s: Record<string, unknown>) => {

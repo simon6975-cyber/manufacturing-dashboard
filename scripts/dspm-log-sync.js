@@ -268,14 +268,27 @@ async function processRequest(requestId, requestData) {
   log(`✅ 요청 완료: ${requestId} — ${totalWork}대 장비, ${dates.length}일`);
 }
 
+/* ── 장비 정의 (읽기 절약: 30분 캐시) ── */
+// machine_definitions 는 장비 관리에서 가끔 바뀌는 데이터인데, 자동 동기화(10분)·병목 판정(5분)이
+// 매번 ~20문서를 읽으면 하루 9천 건이 넘는다. 30분마다 한 번만 읽어 둘이 같이 쓴다.
+const DEFS_TTL_MS = 30 * 60000;
+let defsCache = { at: 0, docs: [] };
+
+async function getMachineDefDocs() {
+  if (Date.now() - defsCache.at < DEFS_TTL_MS) return defsCache.docs;
+  const snap = await db.collection('machine_definitions').get();
+  defsCache = { at: Date.now(), docs: snap.docs.map((d) => ({ id: d.id, data: d.data() })) };
+  return defsCache.docs;
+}
+
 /* ── 자동 동기화 ── */
 // MCNO 매핑된 장비 목록: 대시보드 장비관리(machine_definitions) 기준, 비어 있으면 기본 매핑
 async function loadMcnoMachines() {
-  const snap = await db.collection('machine_definitions').get();
-  if (snap.empty) return DEFAULT_MCNO_MACHINES;
+  const docs = await getMachineDefDocs();
+  if (docs.length === 0) return DEFAULT_MCNO_MACHINES;
   const list = [];
-  snap.forEach((d) => {
-    const data = d.data();
+  docs.forEach((d) => {
+    const data = d.data;
     if (typeof data.mcno === 'number' && data.mcno > 0) {
       list.push({ no: parseInt(d.id, 10), name: data.name || `장비 ${d.id}`, mcno: data.mcno });
     }
@@ -495,10 +508,14 @@ function evaluateBottlenecks(input, st) {
         delete st.match[m.mcno];
       } else if (match) {
         if (!st.match[m.mcno] || st.match[m.mcno].code !== match) st.match[m.mcno] = { code: match, since: now };
-      } else if (st.runSince[m.mcno] == null) {
-        // 로그의 마지막 구간이 RUN 이면 그 시작부터, 아니면(로그 갱신 전 상태 변경) 지금부터
+      } else {
+        // 처음 RUN 을 본 시각부터 세되, 로그의 마지막 구간이 RUN 이고 그 RUN 이 지금까지 이어진다면
+        // (로그는 10분마다 갱신 — 끝이 지금으로부터 15분 이내) 로그상 RUN 시작으로 앞당긴다.
+        // 스크립트 시작 직후처럼 로그가 아직 없을 때 '지금'으로 잡힌 값도 로그가 들어오면 바로잡힌다.
         const last = spans[spans.length - 1];
-        st.runSince[m.mcno] = last && last.state === 'RUN' ? last.start : now;
+        const fromLog = last && last.state === 'RUN' && now - last.end <= 15 * 60000 ? last.start : null;
+        const cur = st.runSince[m.mcno] ?? now;
+        st.runSince[m.mcno] = fromLog != null ? Math.min(cur, fromLog) : cur;
       }
       const r4 = rules.BN4;
       const since = match ? st.match[m.mcno]?.since : st.runSince[m.mcno];
@@ -523,18 +540,18 @@ let bnInputs = { at: 0, rules: {}, limits: {}, machines: [] };
 let lastBnJson = '';
 let lastBnWrite = 0;
 let lastStateWrite = 0;
-const BN_INPUT_TTL_MS = 5 * 60000;  // 규칙·최대치·장비 정의는 5분마다 다시 읽음 (읽기 절약)
+const BN_INPUT_TTL_MS = 5 * 60000;  // 규칙·최대치는 5분마다 다시 읽음 (문서 2개), 장비 정의는 30분 캐시
 
 async function loadBnInputs(now) {
   if (now - bnInputs.at < BN_INPUT_TTL_MS) return bnInputs;
-  const [rulesSnap, limitsSnap, defsSnap] = await Promise.all([
+  const [rulesSnap, limitsSnap, defDocs] = await Promise.all([
     db.doc('settings/bottleneck_rules').get(),
     db.doc('settings/queue_limits').get(),
-    db.collection('machine_definitions').get(),
+    getMachineDefDocs(),
   ]);
   const machines = [];
-  defsSnap.forEach((d) => {
-    const x = d.data();
+  defDocs.forEach((d) => {
+    const x = d.data;
     machines.push({
       no: parseInt(d.id, 10),
       name: x.name || `장비 ${d.id}`,
@@ -591,30 +608,41 @@ async function runBottleneckTick() {
   }
 }
 
-/* ── 폴링 루프 ── */
-// 요청 처리와 자동 동기화가 겹치지 않게 하나의 플래그로 직렬화
+/* ── 요청 감시 + 작업 루프 ── */
+// 대시보드 동기화 요청(dspm_sync_requests, status=pending)은 실시간 구독으로 받는다.
+// 예전엔 5초마다 조회했는데, 결과가 없어도 조회 1번 = 읽기 1건이라 하루 1.7만 건(무료 한도의 1/3)을 썼다.
+// 구독은 요청이 생기거나 바뀔 때만 읽기가 든다.
 let isProcessing = false;
 let autoSyncDue = AUTO_SYNC_MIN > 0;
+let pendingRequests = [];   // 구독이 채우는 대기 요청 (requestedAt 오름차순)
+
+function watchRequests() {
+  db.collection('dspm_sync_requests')
+    .where('status', '==', 'pending')
+    .orderBy('requestedAt', 'asc')
+    .onSnapshot((snap) => {
+      pendingRequests = snap.docs.map((d) => ({ id: d.id, data: d.data() }));
+    }, (err) => {
+      // 한도 초과·네트워크 오류 등 — 1분 뒤 다시 구독
+      log(`⚠️  요청 구독 오류: ${err.message} — 1분 뒤 재시도`);
+      pendingRequests = [];
+      setTimeout(watchRequests, 60000);
+    });
+}
 
 async function pollOnce() {
   if (isProcessing) return;
-  isProcessing = true; // 조회 await 중에 다음 tick 이 끼어들지 않게 먼저 잠근다
+  isProcessing = true;
 
   try {
     // 대시보드 요청이 우선 — 사용자가 화면에서 기다리고 있다
-    const snap = await db.collection('dspm_sync_requests')
-      .where('status', '==', 'pending')
-      .orderBy('requestedAt', 'asc')
-      .limit(1)
-      .get();
-
-    if (!snap.empty) {
-      const doc = snap.docs[0];
+    const req = pendingRequests.shift();
+    if (req) {
       try {
-        await processRequest(doc.id, doc.data());
+        await processRequest(req.id, req.data);
       } catch (err) {
-        log(`❌ 요청 처리 실패: ${doc.id} — ${err.message}`);
-        await db.collection('dspm_sync_requests').doc(doc.id).update({
+        log(`❌ 요청 처리 실패: ${req.id} — ${err.message}`);
+        await db.collection('dspm_sync_requests').doc(req.id).update({
           status: 'error',
           error: err.message,
           completedAt: new Date().toISOString(),
@@ -625,7 +653,7 @@ async function pollOnce() {
       await autoSyncOnce();
     }
   } catch (err) {
-    log(`⚠️  폴링 오류: ${err.message}`);
+    log(`⚠️  작업 오류: ${err.message}`);
   } finally {
     isProcessing = false;
   }
@@ -635,7 +663,7 @@ async function pollOnce() {
 async function main() {
   console.log('');
   console.log('╔═══════════════════════════════════════════════════════╗');
-  console.log('║     DSPM Log Sync — 사내PC 동기화 스크립트 v1.3     ║');
+  console.log('║     DSPM Log Sync — 사내PC 동기화 스크립트 v1.4     ║');
   console.log('╠═══════════════════════════════════════════════════════╣');
   console.log(`║ DSPM API: ${DSPM_BASE.padEnd(42)}║`);
   console.log(`║ 폴링간격: ${String(POLL_MS).padEnd(42)}ms ║`);
@@ -675,6 +703,7 @@ async function main() {
     syncProccnt();
     setInterval(syncProccnt, PROCCNT_SEC * 1000);
   }
+  watchRequests();
   setInterval(pollOnce, POLL_MS);
   pollOnce(); // 즉시 1회 체크
 }

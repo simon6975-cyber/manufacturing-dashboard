@@ -30,7 +30,7 @@ node dspm-log-sync.js
 ### 동작 방식
 
 1. 스크립트 시작 → DSPM / Firebase 연결 확인 → 자동 동기화 1회 (어제+오늘)
-2. 5초마다 `dspm_sync_requests` 컬렉션에서 `status: 'pending'` 문서를 확인
+2. `dspm_sync_requests` 컬렉션의 `status: 'pending'` 문서를 **실시간 구독**으로 감시 (예전 5초 조회는 결과가 없어도 읽기 1건씩 — 하루 1.7만 건이라 v1.4 에서 구독으로 변경)
 3. 요청 발견 시:
    - status → `processing` 으로 변경
    - 요청의 각 장비에 대해 DSPM `getmachinelog` API 호출

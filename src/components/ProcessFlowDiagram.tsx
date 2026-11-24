@@ -851,10 +851,11 @@ const ProcessFlowDiagram: React.FC = () => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatusCount icon={Play} label="가동 중" count={statusCounts.RUN} total={totalMachines} color="emerald"/>
         <StatusCount icon={Pause} label="대기" count={statusCounts.IDLE} color="amber"/>
         <StatusCount icon={AlertCircle} label="정지" count={statusCounts.STOP} color="rose" pulse/>
+        <StatusCount icon={AlertTriangle} label="병목" count={bottleneckCount} color="violet" pulse sub={bottleneckCodesNow.length>0?`(${bottleneckCodesNow.join('·')})`:undefined}/>
       </div>
 
       {/* 메인 흐름도 — 내지/표지(병렬) → 제본(10-17 세로) → 포장 */}
@@ -985,11 +986,12 @@ const Legend: React.FC<{color:PastelColor;label:string;pulse?:boolean}> = ({colo
   const d:Record<PastelColor,string> = {emerald:'bg-emerald-400',amber:'bg-amber-300',rose:'bg-rose-400',sky:'bg-sky-400'};
   return (<span className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${m[color]} font-medium`}><span className={`w-1.5 h-1.5 rounded-full ${d[color]} ${pulse?'animate-pulse':''}`}/>{label}</span>);
 };
-const StatusCount: React.FC<{icon:React.ComponentType<{className?:string}>;label:string;count:number;total?:number;color:PastelColor;pulse?:boolean}> = ({icon:Icon,label,count,total,color,pulse}) => {
-  const bg:Record<PastelColor,string> = {emerald:'bg-emerald-400/15 text-emerald-300',amber:'bg-amber-300/15 text-amber-200',rose:'bg-rose-400/15 text-rose-300',sky:'bg-sky-400/15 text-sky-300'};
-  return (<div className={`bg-gray-900 rounded-lg p-3 border border-gray-800 flex items-center gap-3 ${pulse&&count>0?'animate-stop-pulse':''}`}>
+const StatusCount: React.FC<{icon:React.ComponentType<{className?:string}>;label:string;count:number;total?:number;color:PastelColor|'violet';pulse?:boolean;sub?:string}> = ({icon:Icon,label,count,total,color,pulse,sub}) => {
+  const bg:Record<PastelColor|'violet',string> = {emerald:'bg-emerald-400/15 text-emerald-300',amber:'bg-amber-300/15 text-amber-200',rose:'bg-rose-400/15 text-rose-300',sky:'bg-sky-400/15 text-sky-300',violet:'bg-violet-400/15 text-violet-300'};
+  const pulseClass = color==='violet' ? 'animate-bottleneck-pulse' : 'animate-stop-pulse';
+  return (<div className={`bg-gray-900 rounded-lg p-3 border border-gray-800 flex items-center gap-3 ${pulse&&count>0?pulseClass:''}`}>
     <div className={`w-10 h-10 rounded flex items-center justify-center ${bg[color]}`}><Icon className="w-5 h-5"/></div>
-    <div><p className="text-xl font-bold text-gray-100 leading-tight">{count}{total!==undefined&&<span className="text-xs text-gray-500 font-normal ml-1">/ {total}</span>}</p><p className="text-[11px] text-gray-400">{label}</p></div>
+    <div className="min-w-0"><p className="text-xl font-bold text-gray-100 leading-tight">{count}{total!==undefined&&<span className="text-xs text-gray-500 font-normal ml-1">/ {total}</span>}</p><p className="text-[11px] text-gray-400 truncate">{label}{sub&&<span className="ml-1 text-violet-300 font-medium">{sub}</span>}</p></div>
   </div>);
 };
 const TotalCard: React.FC<{label:string;value:number;unit?:string;color?:'white'|'amber'|'rose'|'sky'|'emerald';border?:string}> = ({label,value,unit,color='white',border=''}) => {

@@ -8,15 +8,12 @@ import {
   Workflow,
   Activity,
   Factory,
-  CalendarDays,
-  Building2,
   Package,
-  ClipboardList,
-  FileText,
-  SlidersHorizontal,
+  BookOpen,
+  Layers,
+  Ruler,
   ListChecks,
   Wrench,
-  FileSpreadsheet,
   ChevronsLeft,
   ChevronsRight,
   Sun,
@@ -25,7 +22,7 @@ import {
 import { useCollapsible } from '@/lib/useCollapsible';
 import { useTheme } from '@/lib/useTheme';
 
-const APP_VERSION = 'v2.23.0';
+const APP_VERSION = 'v2.24.0';
 
 type NavItem = {
   href: string;
@@ -34,31 +31,28 @@ type NavItem = {
   badge?: string;
 };
 
+// LNB — 공정흐름도 / 생산현황 / 병목분석 / 리포트 / 설정 (v2.24.0 개편)
+// 예전 메뉴(장비별·기간별·부서별·제품별·거래명세서·주간~기간설정 리포트)는 주소로만 남아 있다
 const sections: { title: string; items: NavItem[] }[] = [
   {
-    title: '워크플로우',
-    items: [
-      { href: '/', label: '공정흐름도', icon: Workflow, badge: 'LIVE' },
-      { href: '/analysis', label: '정지/병목 분석', icon: Activity },
-    ],
+    title: '공정흐름도',
+    items: [{ href: '/', label: '공정흐름도', icon: Workflow, badge: 'LIVE' }],
   },
   {
-    title: '생산현황집계',
-    items: [
-      { href: '/summary/equipment', label: '장비별', icon: Factory },
-      { href: '/summary/period', label: '기간별', icon: CalendarDays },
-      { href: '/summary/department', label: '부서별', icon: Building2 },
-      { href: '/summary/product', label: '제품별', icon: Package },
-      { href: '/summary/transaction', label: '거래명세서 관리', icon: ClipboardList },
-    ],
+    title: '생산현황',
+    items: [{ href: '/production', label: '생산현황', icon: Factory }],
+  },
+  {
+    title: '병목분석',
+    items: [{ href: '/analysis', label: '병목분석', icon: Activity }],
   },
   {
     title: '리포트',
     items: [
-      { href: '/report/weekly', label: '주간', icon: FileText },
-      { href: '/report/monthly', label: '월간', icon: FileText },
-      { href: '/report/quarterly', label: '분기', icon: FileText },
-      { href: '/report/custom', label: '기간설정', icon: SlidersHorizontal },
+      { href: '/report/product-type', label: '제품형태', icon: Package },
+      { href: '/report/product', label: '제품별', icon: BookOpen },
+      { href: '/report/binding', label: '제작방식', icon: Layers },
+      { href: '/report/spec', label: '제작사양', icon: Ruler },
     ],
   },
   {
@@ -66,7 +60,6 @@ const sections: { title: string; items: NavItem[] }[] = [
     items: [
       { href: '/codes', label: '정지/병목코드', icon: ListChecks },
       { href: '/settings/machines', label: '장비 관리', icon: Wrench },
-      { href: '/sheets', label: '시트 연결', icon: FileSpreadsheet },
     ],
   },
 ];
@@ -165,12 +158,15 @@ const Sidebar: React.FC = () => {
       </div>
 
       {/* 메뉴 */}
-      <nav className="space-y-5 flex-1 overflow-y-auto -mr-2 pr-2">
+      <nav className="space-y-3 flex-1 overflow-y-auto -mr-2 pr-2">
         {sections.map((section) => (
           <div key={section.title}>
-            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 px-2">
-              {section.title}
-            </p>
+            {/* 항목이 하나뿐이고 이름이 제목과 같으면(공정흐름도·생산현황·병목분석) 제목은 생략 — 같은 글자가 두 번 보이지 않게 */}
+            {!(section.items.length === 1 && section.items[0].label === section.title) && (
+              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 px-2">
+                {section.title}
+              </p>
+            )}
             <div className="space-y-0.5">
               {section.items.map((item) => {
                 const Icon = item.icon;

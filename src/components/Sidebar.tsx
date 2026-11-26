@@ -1,7 +1,7 @@
 // src/components/Sidebar.tsx
 'use client';
 
-import React, { useSyncExternalStore } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -18,11 +18,14 @@ import {
   ChevronsRight,
   Sun,
   Moon,
+  FileBarChart,
+  Settings,
+  ChevronDown,
 } from 'lucide-react';
 import { useCollapsible } from '@/lib/useCollapsible';
 import { useTheme } from '@/lib/useTheme';
 
-const APP_VERSION = 'v2.24.0';
+const APP_VERSION = 'v2.25.0';
 
 type NavItem = {
   href: string;
@@ -31,9 +34,10 @@ type NavItem = {
   badge?: string;
 };
 
-// LNB — 공정흐름도 / 생산현황 / 병목분석 / 리포트 / 설정 (v2.24.0 개편)
-// 예전 메뉴(장비별·기간별·부서별·제품별·거래명세서·주간~기간설정 리포트)는 주소로만 남아 있다
-const sections: { title: string; items: NavItem[] }[] = [
+// LNB — 공정흐름도 / 생산현황 / 병목분석 / 리포트 / 설정
+// 항목이 하나면 바로 링크, 여럿이면(리포트·설정) 같은 크기의 그룹 머리를 눌러 하위 메뉴를 펼친다
+type NavSection = { title: string; icon?: React.ComponentType<{ className?: string }>; items: NavItem[] };
+const sections: NavSection[] = [
   {
     title: '공정흐름도',
     items: [{ href: '/', label: '공정흐름도', icon: Workflow, badge: 'LIVE' }],
@@ -48,6 +52,7 @@ const sections: { title: string; items: NavItem[] }[] = [
   },
   {
     title: '리포트',
+    icon: FileBarChart,
     items: [
       { href: '/report/product-type', label: '제품형태', icon: Package },
       { href: '/report/product', label: '제품별', icon: BookOpen },
@@ -57,6 +62,7 @@ const sections: { title: string; items: NavItem[] }[] = [
   },
   {
     title: '설정',
+    icon: Settings,
     items: [
       { href: '/codes', label: '정지/병목코드', icon: ListChecks },
       { href: '/settings/machines', label: '장비 관리', icon: Wrench },
@@ -78,6 +84,8 @@ const Sidebar: React.FC = () => {
   // 좁은 화면(모바일 가로보기 등)에서만 아이콘 막대로 접을 수 있다 — PC는 항상 펼침
   const { isNarrow, collapsed, toggle } = useCollapsible('sidebarCollapsed');
   const { theme, toggle: toggleTheme } = useTheme();
+  // 그룹 펼침: 사용자가 누른 적 있으면 그 값, 없으면 현재 화면이 그 그룹 안에 있을 때 펼침
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({});
   const ThemeIcon = theme === 'light' ? Moon : Sun;
   const themeTitle = theme === 'light' ? '블랙 배경으로' : '화이트 배경으로';
 
@@ -158,42 +166,50 @@ const Sidebar: React.FC = () => {
       </div>
 
       {/* 메뉴 */}
-      <nav className="space-y-3 flex-1 overflow-y-auto -mr-2 pr-2">
-        {sections.map((section) => (
-          <div key={section.title}>
-            {/* 항목이 하나뿐이고 이름이 제목과 같으면(공정흐름도·생산현황·병목분석) 제목은 생략 — 같은 글자가 두 번 보이지 않게 */}
-            {!(section.items.length === 1 && section.items[0].label === section.title) && (
-              <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-2 px-2">
-                {section.title}
-              </p>
-            )}
-            <div className="space-y-0.5">
-              {section.items.map((item) => {
-                const Icon = item.icon;
-                const isActive = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-2.5 px-2.5 py-2 rounded-md transition-colors text-sm ${
-                      isActive
-                        ? 'bg-blue-500/10 text-white border border-blue-500/40'
-                        : 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200 border border-transparent'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4 shrink-0" />
-                    <span className="flex-1 font-medium">{item.label}</span>
-                    {item.badge && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                        {item.badge}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
+      <nav className="space-y-0.5 flex-1 overflow-y-auto -mr-2 pr-2">
+        {sections.map((section) => {
+          const renderLink = (item: NavItem, child = false) => {
+            const Icon = item.icon;
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-2.5 ${child ? 'pl-8 pr-2.5 py-1.5' : 'px-2.5 py-2'} rounded-md transition-colors text-sm ${
+                  isActive
+                    ? 'bg-blue-500/10 text-white border border-blue-500/40'
+                    : 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200 border border-transparent'
+                }`}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                <span className="flex-1 font-medium">{item.label}</span>
+                {item.badge && (
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                    {item.badge}
+                  </span>
+                )}
+              </Link>
+            );
+          };
+          if (section.items.length === 1) return <div key={section.title}>{renderLink(section.items[0])}</div>;
+
+          const GroupIcon = section.icon || FileBarChart;
+          const hasActive = section.items.some((it) => it.href === pathname);
+          const open = groupOpen[section.title] ?? hasActive;
+          return (
+            <div key={section.title}>
+              <button type="button" onClick={() => setGroupOpen((g) => ({ ...g, [section.title]: !open }))}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md transition-colors text-sm border border-transparent ${
+                  hasActive && !open ? 'text-white bg-blue-500/10' : 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200'
+                }`}>
+                <GroupIcon className="w-4 h-4 shrink-0" />
+                <span className="flex-1 font-medium text-left">{section.title}</span>
+                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform ${open ? '' : '-rotate-90'}`} />
+              </button>
+              {open && <div className="space-y-0.5 mt-0.5">{section.items.map((item) => renderLink(item, true))}</div>}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </nav>
 
       {/* 하단 */}

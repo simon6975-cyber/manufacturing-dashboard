@@ -4,11 +4,13 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Factory, Search, Loader2, ChevronDown, ChevronRight, Calendar } from 'lucide-react';
+import { Factory, Search, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import MultiSelectDropdown from '@/components/MultiSelectDropdown';
 import { useMachineDefs } from '@/lib/machine-defs';
 import { getCountUnit } from '@/lib/count-unit';
 import { fetchApiJson, describeLoadError } from '@/lib/fetch-error';
+import DateRangeBar from '@/components/DateRangeBar';
+import { addDays, weekday, daysBetween, presetRange, WEEKDAY_KO } from '@/lib/date-range';
 
 type StateKey = 'RUN' | 'IDLE' | 'STOP';
 const STATE_OPTIONS: { value: StateKey; label: string; color: string; bar: string }[] = [
@@ -17,40 +19,6 @@ const STATE_OPTIONS: { value: StateKey; label: string; color: string; bar: strin
   { value: 'STOP', label: 'STOP (정지)', color: 'text-rose-400', bar: 'bg-rose-500' },
 ];
 const MAX_DAYS = 92; // 한 번에 조회할 최대 기간 (Firestore 읽기 보호)
-
-// ── KST 날짜 유틸 ──
-const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-const addDays = (date: string, n: number) => {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-};
-const weekday = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay(); // 0=일
-const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000) + 1;
-const WEEKDAY_KO = ['일', '월', '화', '수', '목', '금', '토'];
-
-function presetRange(key: string): [string, string] {
-  const today = kstToday();
-  const monday = addDays(today, -((weekday(today) + 6) % 7));
-  const monthStart = `${today.slice(0, 7)}-01`;
-  switch (key) {
-    case 'thisWeek': return [monday, today];
-    case 'lastWeek': return [addDays(monday, -7), addDays(monday, -1)];
-    case 'thisMonth': return [monthStart, today];
-    case 'lastMonth': {
-      const lastEnd = addDays(monthStart, -1);
-      return [`${lastEnd.slice(0, 7)}-01`, lastEnd];
-    }
-    default: return [today, today];
-  }
-}
-const PRESETS = [
-  { key: 'today', label: '오늘' },
-  { key: 'thisWeek', label: '이번 주' },
-  { key: 'lastWeek', label: '지난 주' },
-  { key: 'thisMonth', label: '이번 달' },
-  { key: 'lastMonth', label: '지난 달' },
-];
 
 function formatSeconds(sec: number): string {
   if (sec <= 0) return '-';
@@ -155,20 +123,7 @@ export default function ProductionPage() {
       {/* 조회 조건 */}
       <div className="bg-gray-900/60 border border-gray-800 rounded-lg p-3 flex flex-wrap items-center gap-2">
         <MultiSelectDropdown label="장비" options={machineOptions} selected={selectedMachines} onChange={setPickedMachines} width="w-64" />
-        <div className="flex items-center gap-1.5 bg-gray-900 border border-gray-700 rounded-lg px-2.5 py-1">
-          <Calendar className="w-3.5 h-3.5 text-gray-500" />
-          <input type="date" value={startDate} onChange={e => setRange([e.target.value, endDate])}
-            className="bg-transparent text-sm text-gray-100 outline-none" />
-          <span className="text-gray-600">~</span>
-          <input type="date" value={endDate} onChange={e => setRange([startDate, e.target.value])}
-            className="bg-transparent text-sm text-gray-100 outline-none" />
-        </div>
-        <div className="flex items-center gap-0.5">
-          {PRESETS.map(p => (
-            <button key={p.key} type="button" onClick={() => setRange(presetRange(p.key))}
-              className="text-xs text-gray-400 hover:text-blue-300 px-2 py-1 rounded hover:bg-blue-500/10 transition-colors">{p.label}</button>
-          ))}
-        </div>
+        <DateRangeBar start={startDate} end={endDate} onChange={setRange} />
         <MultiSelectDropdown label="상태" options={STATE_OPTIONS} selected={states} onChange={setStates} width="w-52" />
         <div className="flex-1" />
         {rangeError && <span className="text-xs text-amber-400">{rangeError}</span>}
